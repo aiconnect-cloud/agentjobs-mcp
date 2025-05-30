@@ -1,0 +1,57 @@
+{
+  "name": "agentjobs-mcp",
+  "version": "1.0.0",
+  "description": "MCP (Model Context Protocol) server for managing Agent Jobs in the AI Connect platform. Developed by AI Connect - Advanced AI automation and integration solutions.",
+  "type": "module",
+  "main": "build/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiconnect-cloud/agentjobs-mcp.git"
+  },
+  "homepage": "https://aiconnect.cloud",
+  "organization": "AI Connect",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "anthropic",
+    "aiconnect",
+    "agent-jobs",
+    "typescript",
+    "automation"
+  ],
+  "author": "Eric Santos",
+  "license": "MIT",
+  "bin": {
+    "agentjobs-mcp": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "tsc && node build/index.js",
+    "clean": "rm -rf build",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'Linting not configured yet'",
+    "test": "echo 'Tests not configured yet'",
+    "prepare": "npm run build",
+    "postinstall": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.1.0",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "build/**/*",
+    "docs/**/*",
+    "README.md",
+    "package.json"
+  ]
+}
