@@ -25,7 +25,7 @@
     "agentjobs-mcp": "build/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x build/index.js",
     "start": "node build/index.js",
     "dev": "tsc && node build/index.js",
     "clean": "rm -rf build",
