@@ -1,6 +1,6 @@
 {
   "name": "@aiconnect/agentjobs-mcp",
-  "version": "1.0.3",
+  "version": "1.0.2",
   "description": "MCP (Model Context Protocol) server for managing Agent Jobs in the AI Connect platform. Developed by AI Connect - Advanced AI automation and integration solutions.",
   "type": "module",
   "main": "build/index.js",
