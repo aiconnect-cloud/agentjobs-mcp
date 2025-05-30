@@ -1,10 +1,15 @@
-# Agent Jobs MCP Server - Development Guidelines
+# AI Connect MCP Server - Development Guidelines
 
-This document outlines the development guidelines, standards, and best practices for the Agent Jobs MCP Server project.
+This document outlines the development guidelines, standards, and best practices for the AI Connect MCP Server project.
 
-## Project Overview
+This project is an MCP (Model Context Protocol) server that provides AI agents with the ability to interact with the AI Connect Jobs system from the AI Connect platform. It's built using Node.js, TypeScript, and follows the MCP specification from Anthropic.
 
-This project is an MCP (Model Context Protocol) server that provides AI agents with the ability to interact with the Agent Jobs system from the AI Connect platform. It's built using Node.js, TypeScript, and follows the MCP specification from Anthropic.
+## Environment Variables
+
+Use the following environment variables for configuration:
+
+- `AICONNECT_API_URL`: API endpoint URL (e.g., https://api.aiconnect.cloud/api/v0)
+- `AICONNECT_API_KEY`: Your API authentication key
 
 ## Development Standards
 

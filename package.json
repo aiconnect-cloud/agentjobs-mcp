@@ -1,6 +1,6 @@
 {
   "name": "@aiconnect/agentjobs-mcp",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "MCP (Model Context Protocol) server for managing Agent Jobs in the AI Connect platform. Developed by AI Connect - Advanced AI automation and integration solutions.",
   "type": "module",
   "main": "build/index.js",
@@ -40,7 +40,10 @@
     "publish:minor": "npm run version:minor && npm publish",
     "publish:major": "npm run version:major && npm publish",
     "release": "npm run clean && npm run build && npm run typecheck && npm publish",
-    "prepublishOnly": "npm run clean && npm run build && npm run typecheck"
+    "prepublishOnly": "npm run clean && npm run build && npm run typecheck",
+    "cli:help": "npm run build && node build/index.js --help",
+    "cli:version": "npm run build && node build/index.js --version",
+    "cli:config": "npm run build && node build/index.js --config"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.1.0",
@@ -59,6 +62,7 @@
     "build/**/*",
     "docs/**/*",
     "README.md",
-    "package.json"
+    "package.json",
+    ".env.example"
   ]
 }

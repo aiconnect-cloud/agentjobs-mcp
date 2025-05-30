@@ -1,10 +1,10 @@
-# Agent Jobs MCP Server
+# AI Connect MCP Server
 
-An MCP (Model Context Protocol) server that allows AI agents to query and manage jobs in the Agent Jobs system of the AI Connect platform.
+An MCP (Model Context Protocol) server that allows AI agents to query and manage jobs in the AI Connect platform.
 
-## About Agent Jobs
+## About AI Connect Jobs
 
-Agent Jobs is a robust asynchronous task management system on the AI Connect platform, enabling the creation, monitoring, and execution of jobs across different platforms like Slack and WhatsApp, with support for scheduled execution, automatic retries, and timeout handling. The Agent Jobs manipulation API provides endpoints to create, list, query, and cancel jobs, allowing developers and external systems to easily integrate asynchronous processing functionalities into their applications, automating complex workflows without the need to implement the entire task management infrastructure.
+AI Connect Jobs is a robust asynchronous task management system on the AI Connect platform, enabling the creation, monitoring, and execution of jobs across different platforms like Slack and WhatsApp, with support for scheduled execution, automatic retries, and timeout handling. The API provides endpoints to create, list, query, and cancel jobs, allowing developers and external systems to easily integrate asynchronous processing functionalities into their applications, automating complex workflows without the need to implement the entire task management infrastructure.
 
 ## Features
 
@@ -25,6 +25,16 @@ This MCP Server provides tools for AI agents to:
 
 ## Installation
 
+### NPX (Recommended)
+
+You can run the MCP server directly using npx without installation:
+
+```bash
+npx @aiconnect/agentjobs-mcp --help
+```
+
+### Local Installation
+
 1. **Clone the repository:**
 ```bash
 git clone <repository-url>
@@ -38,10 +48,10 @@ npm install
 
 3. **Configure environment variables (Optional):**
 
-The MCP server comes with default values from `.env-example`, so you can run it without setting any environment variables. However, you **must** provide an API key for authentication.
+The MCP server comes with default values from `.env.example`, so you can run it without setting any environment variables. However, you **must** provide an API key for authentication.
 
 ```bash
-cp .env-example .env
+cp .env.example .env
 ```
 
 Edit the `.env` file with your credentials:
@@ -63,12 +73,78 @@ npm run build
 
 ## Usage
 
+### CLI Usage
+
+The MCP server now supports CLI commands for easy management:
+
+```bash
+# Show help and usage information
+npx @aiconnect/agentjobs-mcp --help
+
+# Show version information
+npx @aiconnect/agentjobs-mcp --version
+
+# Show current configuration status
+npx @aiconnect/agentjobs-mcp --config
+
+# Start MCP server (default behavior)
+npx @aiconnect/agentjobs-mcp
+```
+
+**Setting Environment Variables:**
+```bash
+# Using environment variables with npx
+AICONNECT_API_URL=https://api.aiconnect.cloud/api/v0 \
+AICONNECT_API_KEY=your-api-key-here \
+npx @aiconnect/agentjobs-mcp
+
+# Or create a .env file (recommended for development)
+cp .env.example .env
+# Edit .env with your credentials
+npx @aiconnect/agentjobs-mcp
+```
+
+**Required Environment Variables:**
+- `AICONNECT_API_URL`: API endpoint URL (e.g., https://api.aiconnect.cloud/api/v0)
+- `AICONNECT_API_KEY`: Your API authentication key
+
+**CLI Command Examples:**
+```bash
+# Quick help
+npx @aiconnect/agentjobs-mcp -h
+
+# Check version
+npx @aiconnect/agentjobs-mcp -v
+
+# Verify configuration before starting
+npx @aiconnect/agentjobs-mcp -c
+
+# Test with environment variables
+env AICONNECT_API_URL=https://api.aiconnect.cloud/api/v0 \
+    AICONNECT_API_KEY=test-key \
+    npx @aiconnect/agentjobs-mcp --config
+```
+
+### Local Development
+
+For local development, you can use npm scripts:
+
+```bash
+# Build and test CLI commands
+npm run cli:help
+npm run cli:version  
+npm run cli:config
+
+# Run test suite (if available)
+npm run test:cli
+```
+
 ### Configuration Options
 
 This MCP server is designed to work out-of-the-box with minimal configuration. It uses a smart fallback system:
 
 1. **With environment variables**: Full control over all settings
-2. **Without environment variables**: Uses defaults from `.env-example`
+2. **Without environment variables**: Uses defaults from `.env.example`
 3. **Partial configuration**: Mix of environment variables and defaults
 
 **Default Values (when no env vars are set):**
@@ -194,7 +270,7 @@ agentjobs-mcp/
 │   └── agent-jobs-api.md  # API documentation
 ├── package.json           # Dependencies and scripts
 ├── tsconfig.json          # TypeScript configuration
-├── .env-example           # Environment variables example
+├── .env.example           # Environment variables example
 └── README.md              # This file
 ```
 
@@ -226,10 +302,10 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Support
 
-For technical support or questions about Agent Jobs:
+For technical support or questions about AI Connect Jobs:
 - Check the [API documentation](docs/agent-jobs-api.md)
 - Contact the AI Connect development team
 
 ---
 
-**Note**: This project was developed using the Anthropic mcp-tools scaffold for integration with the Agent Jobs system of the AI Connect platform.
+**Note**: This project was developed using the Anthropic mcp-tools scaffold for integration with the AI Connect platform.
