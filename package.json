@@ -1,12 +1,12 @@
 {
-  "name": "agentjobs-mcp",
+  "name": "@aiconnect/agentjobs-mcp",
   "version": "1.0.0",
   "description": "MCP (Model Context Protocol) server for managing Agent Jobs in the AI Connect platform. Developed by AI Connect - Advanced AI automation and integration solutions.",
   "type": "module",
   "main": "build/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aiconnect-cloud/agentjobs-mcp.git"
+    "url": "git+https://github.com/aiconnect-cloud/agentjobs-mcp.git"
   },
   "homepage": "https://aiconnect.cloud",
   "organization": "AI Connect",
@@ -22,7 +22,7 @@
   "author": "Eric Santos",
   "license": "MIT",
   "bin": {
-    "agentjobs-mcp": "./build/index.js"
+    "agentjobs-mcp": "build/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -33,7 +33,15 @@
     "lint": "echo 'Linting not configured yet'",
     "test": "echo 'Tests not configured yet'",
     "prepare": "npm run build",
-    "postinstall": "npm run build"
+    "postinstall": "npm run build",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major",
+    "publish:patch": "npm run version:patch && npm publish",
+    "publish:minor": "npm run version:minor && npm publish",
+    "publish:major": "npm run version:major && npm publish",
+    "release": "npm run clean && npm run build && npm run typecheck && npm publish",
+    "prepublishOnly": "npm run clean && npm run build && npm run typecheck"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.1.0",
