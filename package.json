@@ -22,7 +22,7 @@
   "author": "Eric Santos",
   "license": "MIT",
   "bin": {
-    "agentjobs-mcp": "build/index.js"
+    "agentjobs-mcp": "./build/index.js"
   },
   "scripts": {
     "build": "tsc && chmod +x build/index.js",
