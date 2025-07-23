@@ -90,10 +90,22 @@ type JobType = z.infer<typeof jobTypeSchema>;
 export function formatJobTypeDetails(jobType: unknown): string {
   try {
     const parsedJobType = jobTypeSchema.parse(jobType);
-    const fullJobTypeDetails = JSON.stringify(parsedJobType, null, 2);
-    return `Job Type Details:\n\n${fullJobTypeDetails}`;
+    return `
+- ID: ${parsedJobType.id}
+- Name: ${parsedJobType.name}
+- Description: ${parsedJobType.description}
+- Organization ID: ${parsedJobType.org_id}
+
+Default Configuration:
+- Profile ID: ${parsedJobType.default_config.profile_id}
+- Max Follow-ups: ${parsedJobType.default_config.max_follow_ups}
+- Max Task Retries: ${parsedJobType.default_config.max_task_retries}
+- Task Retry Interval: ${parsedJobType.default_config.task_retry_interval} minutes
+- Max Time to Complete: ${parsedJobType.default_config.max_time_to_complete} minutes
+- Start Prompt: ${parsedJobType.default_config.start_prompt}
+    `.trim();
   } catch (error) {
     // If validation fails, return the object as a string.
-    return JSON.stringify(jobType, null, 2);
+    return `Invalid job type details format: ${JSON.stringify(jobType, null, 2)}`;
   }
 }
