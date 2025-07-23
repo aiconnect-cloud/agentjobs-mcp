@@ -1,137 +1,86 @@
 import { z } from 'zod';
 import axios from 'axios';
 import { config } from '../config.js';
-import { formatJobSummary } from '../utils/formatters.js';
-// Schema for the target_channel object
-const targetChannelSchema = z
-    .object({
-    org_id: z.string().optional().describe("Organization ID. Uses default if not provided."),
-    platform: z
-        .enum(['whatsapp', 'slack', 'web'])
-        .describe("The platform for the job, e.g., 'slack'."),
-    type: z.string().describe("Type of the target, e.g., 'channel'."),
-    code: z.string().describe("Identifier for the target, e.g., a Slack channel ID 'C123456'."),
-    data: z
-        .record(z.any())
-        .optional()
-        .describe("Additional platform-specific data.")
-})
-    .describe('Specifies the destination channel for the job.');
-// Schema for the config object
-const configSchema = z
-    .object({
-    max_follow_ups: z.number().int().optional().describe("Max number of follow-ups."),
-    max_task_retries: z.number().int().optional().describe("Max retries for a task."),
-    task_retry_interval: z.number().int().optional().describe("Interval in minutes between retries."),
-    start_prompt: z.string().describe("The initial prompt to execute."),
-    max_time_to_complete: z.number().int().optional().describe("Max time in minutes for job completion."),
-    profile_id: z.string().describe("Profile ID to use for the job execution.")
-})
-    .describe('Defines the execution settings for the job.');
+/**
+ * Lightweight Agent‑Jobs creator.
+ * Only the essentials are required to keep the contract LLM‑friendly.
+ */
 export default (server) => {
-    server.tool('create_job', 'Creates a new agent job.', {
-        target_channel: targetChannelSchema,
-        job_type_id: z.string().describe('The ID of the job type.'),
-        config: configSchema.optional(),
+    server.tool('create_job', 'Create a new Agent Job with the minimal set of fields.', {
+        // ─────────────────────────────────────────────────────────────────────────┐
+        // Required
+        // ─────────────────────────────────────────────────────────────────────────┘
+        job_type_id: z
+            .string()
+            .describe('ID of the job type (e.g. "mood-monitor")'),
+        target_channel: z
+            .object({
+            platform: z
+                .enum(['whatsapp', 'slack', 'web'])
+                .describe('Destination platform.'),
+            code: z
+                .string()
+                .describe('Channel identifier, phone number, or user ID.'),
+            org_id: z
+                .string()
+                .optional()
+                .describe('Org ID – defaults to config.DEFAULT_ORG_ID')
+        })
+            .describe('Where the agent will communicate.'),
         params: z
             .record(z.any())
             .optional()
-            .describe('Arbitrary parameters for the job.'),
+            .describe('Free‑form params passed to the agent'),
         scheduled_at: z
             .string()
-            .datetime({ message: 'Invalid datetime string. Must be ISO 8601' })
+            .datetime({ message: 'Use ISO‑8601' })
             .optional()
-            .describe('Optional ISO 8601 date string for scheduling the job.'),
-        delay: z
-            .number()
-            .int()
-            .nonnegative()
-            .optional()
-            .describe('Optional maximum random delay in minutes to add to the scheduled time (query parameter).')
-    }, async (toolParams) => {
-        const apiUrl = config.AICONNECT_API_URL;
-        const apiKey = config.AICONNECT_API_KEY;
-        const defaultOrgId = config.DEFAULT_ORG_ID;
-        if (!apiUrl) {
+            .describe('Schedule the job to run later')
+    }, 
+    // ───────────────────────────────────────────────────────────────────────────┐
+    // Implementation                                                             │
+    // ───────────────────────────────────────────────────────────────────────────┘
+    async ({ ...body }) => {
+        const { AICONNECT_API_URL: apiUrl, AICONNECT_API_KEY: apiKey, DEFAULT_ORG_ID } = config;
+        if (!apiUrl || !apiKey) {
             return {
                 content: [
                     {
                         type: 'text',
-                        text: 'Error: API URL is not configured. Please set AICONNECT_API_URL environment variable.'
+                        text: 'API credentials are missing – set AICONNECT_API_URL and AICONNECT_API_KEY.'
                     }
                 ]
             };
         }
-        if (!apiKey) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'Error: API Key is not configured. Please set AICONNECT_API_KEY environment variable.'
-                    }
-                ]
-            };
-        }
-        // Use default org_id if not provided
-        if (!toolParams.target_channel.org_id && defaultOrgId) {
-            toolParams.target_channel.org_id = defaultOrgId;
-        }
-        else if (!toolParams.target_channel.org_id && !defaultOrgId) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'Error: Organization ID is required. Please provide org_id or set DEFAULT_ORG_ID environment variable.'
-                    }
-                ]
-            };
-        }
-        const endpoint = `${apiUrl}/services/agent-jobs`;
-        const headers = {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-        };
-        // Separate delay as it's a query parameter
-        const { delay, ...bodyPayload } = toolParams;
-        const queryParams = {};
-        if (delay !== undefined) {
-            queryParams.delay = delay;
-        }
+        // Fall back to default org if none supplied.
+        body.target_channel.org_id ??= DEFAULT_ORG_ID;
         try {
-            const response = await axios.post(endpoint, bodyPayload, {
-                headers,
-                params: queryParams
+            const res = await axios.post(`${apiUrl}/services/agent-jobs`, body, {
+                headers: { Authorization: `Bearer ${apiKey}` }
             });
-            const createdJob = response.data?.data || response.data;
-            const summary = formatJobSummary(createdJob);
+            const jobId = res.data?.data?.id ?? res.data?.id ?? 'unknown';
             return {
-                content: [{
-                        type: "text",
-                        text: `Successfully created job:\n\n${summary}`,
-                    }]
+                content: [
+                    {
+                        type: 'text',
+                        text: `✅ Job created (id: ${jobId}).`
+                    }
+                ]
             };
         }
-        catch (error) {
-            let errorMessage = `Failed to create job.`;
-            let errorDetails = {};
-            if (axios.isAxiosError(error) && error.response) {
-                const apiError = error.response.data?.message ||
-                    error.response.data?.error ||
-                    JSON.stringify(error.response.data);
-                errorMessage = `API Error (${error.response.status}): ${apiError || error.message}`;
-                errorDetails = {
-                    status: error.response.status,
-                    data: error.response.data
-                };
-            }
-            else if (error instanceof Error) {
-                errorMessage = `Error: ${error.message}`;
-            }
+        catch (err) {
+            const status = err.response?.status;
+            const apiMsg = err.response?.data?.message ?? err.response?.data?.error;
+            const message = status
+                ? `API ${status}: ${apiMsg}`
+                : `Error: ${err.message}`;
             return {
-                content: [{
-                        type: "text",
-                        text: errorMessage,
-                    }],
+                content: [
+                    {
+                        type: 'text',
+                        text: message
+                    }
+                ]
             };
         }
     });
