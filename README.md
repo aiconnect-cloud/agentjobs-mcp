@@ -153,9 +153,9 @@ This MCP server is designed to work out-of-the-box with minimal configuration. I
 - `AICONNECT_API_KEY`: `""` (empty - you must provide this)
 
 **Error Handling:**
-- If `AICONNECT_API_KEY` is not provided, tools will return helpful error messages
-- If `AICONNECT_API_URL` is not set, it defaults to the production API
-- If `DEFAULT_ORG_ID` is not set, it defaults to "aiconnect"
+- The server will always start, even if environment variables are missing.
+- If `AICONNECT_API_KEY` or `AICONNECT_API_URL` are not provided, each tool will return a clear error message upon execution, guiding the user to configure the environment correctly.
+- If `DEFAULT_ORG_ID` is not set, it defaults to "aiconnect".
 
 ### Running the MCP server
 
@@ -260,11 +260,13 @@ Agent: "Cancel job job-456 because it's no longer needed"
 ```
 agentjobs-mcp/
 ├── src/                    # TypeScript source code
-│   ├── index.ts           # Main MCP server
-│   ├── cancel_job.ts      # Tool for canceling jobs
-│   ├── create_job.ts      # Tool for creating jobs
-│   ├── get_job.ts         # Tool for querying job
-│   └── list_jobs.ts       # Tool for listing jobs
+│   ├── index.ts           # Main MCP server entry point
+│   ├── config.ts          # Configuration loader
+│   └── tools/             # Directory for all MCP tools
+│       ├── list_jobs.ts   # Tool for listing jobs
+│       ├── get_job.ts     # Tool for getting a job
+│       ├── create_job.ts  # Tool for creating a job
+│       └── cancel_job.ts  # Tool for canceling a job
 ├── build/                 # Compiled JavaScript code
 ├── docs/                  # Documentation
 │   └── agent-jobs-api.md  # API documentation
@@ -283,10 +285,11 @@ agentjobs-mcp/
 
 ### Adding new tools
 
-1. Create a new file in the `src/` folder (e.g., `new_tool.ts`)
-2. Implement the tool following the pattern of existing files
-3. Register the tool in `src/index.ts`
-4. Recompile with `npm run build`
+Adding a new tool is simple:
+
+1. Create a new TypeScript file inside the `src/tools/` directory (e.g., `my_new_tool.ts`).
+2. Implement your tool logic following the existing pattern. The server will automatically detect and register it on startup.
+3. Recompile the project with `npm run build`.
 
 ## Contributing
 

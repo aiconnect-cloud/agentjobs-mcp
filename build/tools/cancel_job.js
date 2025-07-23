@@ -1,12 +1,13 @@
 import { z } from "zod";
 import axios from 'axios';
-import { config } from './config.js';
+import { config } from '../config.js';
+import { formatJobSummary } from '../utils/formatters.js';
 export default (server) => {
     server.tool("cancel_job", "Cancels an agent job by its ID.", {
         job_id: z.string({
-            description: "The ID of the job to cancel.",
+            description: "The unique identifier of the job to be canceled. Example: 'job-12345'.",
         }),
-        reason: z.string().optional().describe("Optional reason for cancellation."),
+        reason: z.string().optional().describe("An optional reason explaining why the job is being canceled."),
     }, async (params) => {
         const { job_id, reason } = params;
         const apiUrl = config.AICONNECT_API_URL;
@@ -41,21 +42,25 @@ export default (server) => {
                 headers,
                 data: requestBody, // axios uses 'data' for DELETE request body
             });
-            // Assuming the API returns a message field on success as per docs/agent-jobs-api.md:229
-            const responseMessage = response.data?.message || `Job with ID '${job_id}' successfully canceled.`;
+            const canceledJob = response.data?.data || { job_id, job_status: 'canceled' };
+            const summary = formatJobSummary(canceledJob);
             return {
                 content: [{
                         type: "text",
-                        text: responseMessage,
+                        text: `Successfully canceled job:\n\n${summary}`,
                     }]
             };
         }
         catch (error) {
             let errorMessage = `Failed to cancel job ${job_id}.`;
+            let errorDetails = {};
             if (axios.isAxiosError(error) && error.response) {
-                // Try to get a more specific error message from the API response
                 const apiError = error.response.data?.message || error.response.data?.error || JSON.stringify(error.response.data);
                 errorMessage = `API Error (${error.response.status}): ${apiError || error.message}`;
+                errorDetails = {
+                    status: error.response.status,
+                    data: error.response.data
+                };
             }
             else if (error instanceof Error) {
                 errorMessage = `Error: ${error.message}`;
@@ -64,7 +69,7 @@ export default (server) => {
                 content: [{
                         type: "text",
                         text: errorMessage,
-                    }]
+                    }],
             };
         }
     });

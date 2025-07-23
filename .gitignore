@@ -9,6 +9,7 @@ pnpm-debug.log*
 dist/
 out/
 *.tsbuildinfo
+src/**/*.js
 
 # Runtime data
 pids
