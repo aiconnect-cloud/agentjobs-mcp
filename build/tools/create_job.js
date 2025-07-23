@@ -40,22 +40,28 @@ export default (server) => {
     // ───────────────────────────────────────────────────────────────────────────┐
     // Implementation                                                             │
     // ───────────────────────────────────────────────────────────────────────────┘
-    async ({ ...body }) => {
+    async (params) => {
         const { AICONNECT_API_URL: apiUrl, AICONNECT_API_KEY: apiKey, DEFAULT_ORG_ID } = config;
-        if (!apiUrl || !apiKey) {
+        if (!apiUrl) {
             return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'API credentials are missing – set AICONNECT_API_URL and AICONNECT_API_KEY.'
-                    }
-                ]
+                content: [{
+                        type: "text",
+                        text: "Error: API URL is not configured. Please set AICONNECT_API_URL environment variable."
+                    }]
+            };
+        }
+        if (!apiKey) {
+            return {
+                content: [{
+                        type: "text",
+                        text: "Error: API Key is not configured. Please set AICONNECT_API_KEY environment variable."
+                    }]
             };
         }
         // Fall back to default org if none supplied.
-        body.target_channel.org_id ??= DEFAULT_ORG_ID;
+        params.target_channel.org_id ??= DEFAULT_ORG_ID;
         try {
-            const res = await axios.post(`${apiUrl}/services/agent-jobs`, body, {
+            const res = await axios.post(`${apiUrl}/services/agent-jobs`, params, {
                 headers: { Authorization: `Bearer ${apiKey}` }
             });
             const jobId = res.data?.data?.id ?? res.data?.id ?? 'unknown';
@@ -68,17 +74,20 @@ export default (server) => {
                 ]
             };
         }
-        catch (err) {
-            const status = err.response?.status;
-            const apiMsg = err.response?.data?.message ?? err.response?.data?.error;
-            const message = status
-                ? `API ${status}: ${apiMsg}`
-                : `Error: ${err.message}`;
+        catch (error) {
+            let errorMessage = `Failed to create job.`;
+            if (axios.isAxiosError(error) && error.response) {
+                const apiError = error.response.data?.message || error.response.data?.error || JSON.stringify(error.response.data);
+                errorMessage = `API Error (${error.response.status}): ${apiError || error.message}`;
+            }
+            else if (error instanceof Error) {
+                errorMessage = `Error: ${error.message}`;
+            }
             return {
                 content: [
                     {
                         type: 'text',
-                        text: message
+                        text: errorMessage
                     }
                 ]
             };

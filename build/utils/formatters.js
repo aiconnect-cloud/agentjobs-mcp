@@ -56,3 +56,34 @@ export function formatJobList(jobs, pagination) {
     const paginationSummary = `Page: ${Math.floor((pagination.offset || 0) / (pagination.limit || 20)) + 1} | Total Jobs: ${pagination.total}`;
     return `Found ${jobs.length} jobs.\n\n${jobSummaries}\n\n${paginationSummary}`;
 }
+// Schema for job type details
+const jobTypeSchema = z.object({
+    id: z.string(),
+    org_id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    default_config: z.object({
+        profile_id: z.string(),
+        max_follow_ups: z.number(),
+        max_task_retries: z.number(),
+        task_retry_interval: z.number(),
+        max_time_to_complete: z.number(),
+        start_prompt: z.string(),
+    }),
+}).passthrough();
+/**
+ * Formats the response for job type details.
+ * @param jobType - The job type object.
+ * @returns A formatted string with the job type details.
+ */
+export function formatJobTypeDetails(jobType) {
+    try {
+        const parsedJobType = jobTypeSchema.parse(jobType);
+        const fullJobTypeDetails = JSON.stringify(parsedJobType, null, 2);
+        return `Job Type Details:\n\n${fullJobTypeDetails}`;
+    }
+    catch (error) {
+        // If validation fails, return the object as a string.
+        return JSON.stringify(jobType, null, 2);
+    }
+}

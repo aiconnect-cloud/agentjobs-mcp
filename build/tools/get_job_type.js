@@ -1,19 +1,18 @@
 import { z } from 'zod';
 import axios from 'axios';
 import { config } from '../config.js';
-import { formatJobDetails } from '../utils/formatters.js';
+import { formatJobTypeDetails } from '../utils/formatters.js';
 export default (server) => {
-    server.tool('get_job', 'Retrieves an agent job by its ID.', {
-        job_id: z.string({
-            description: "The unique identifier of the job you want to retrieve. Example: 'job-12345'."
+    server.tool('get_job_type', 'Retrieves an agent job type by its ID.', {
+        job_type_id: z.string({
+            description: "The unique identifier of the job type you want to retrieve. Example: 'mood-monitor'."
         }),
-        org_id: z
-            .string({
+        org_id: z.string({
             description: "The organization ID. Example: 'aiconnect'."
-        })
-            .optional()
+        }).optional()
     }, async (params) => {
-        const { job_id } = params;
+        const { job_type_id } = params;
+        const org_id = params.org_id || config.DEFAULT_ORG_ID;
         const apiUrl = config.AICONNECT_API_URL;
         const apiKey = config.AICONNECT_API_KEY;
         if (!apiUrl) {
@@ -36,7 +35,7 @@ export default (server) => {
                 ]
             };
         }
-        const endpoint = `${apiUrl}/services/agent-jobs/${job_id}${params.org_id ? `?org_id=${params.org_id}` : ''}`;
+        const endpoint = `${apiUrl}/organizations/${org_id}/agent-jobs-type/${job_type_id}`;
         const headers = {
             Authorization: `Bearer ${apiKey}`
         };
@@ -44,18 +43,18 @@ export default (server) => {
             const response = await axios.get(endpoint, {
                 headers
             });
-            const job = response.data?.data || response.data;
+            const jobType = response.data?.data || response.data;
             return {
                 content: [
                     {
                         type: 'text',
-                        text: formatJobDetails(job)
+                        text: formatJobTypeDetails(jobType)
                     }
                 ]
             };
         }
         catch (error) {
-            let errorMessage = `Failed to retrieve job ${job_id}.`;
+            let errorMessage = `Failed to retrieve job type ${job_type_id}.`;
             let errorDetails = {};
             if (axios.isAxiosError(error) && error.response) {
                 const apiError = error.response.data?.message ||
