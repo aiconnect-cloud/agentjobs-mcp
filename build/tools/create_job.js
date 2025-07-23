@@ -1,48 +1,32 @@
 import { z } from 'zod';
 import axios from 'axios';
-import { config } from './config.js';
+import { config } from '../config.js';
 // Schema for the target_channel object
 const targetChannelSchema = z
     .object({
-    org_id: z.string().optional().describe('Organization ID for the target channel. If not provided, uses the default organization.'),
+    org_id: z.string().optional().describe("Organization ID. Uses default if not provided."),
     platform: z
         .enum(['whatsapp', 'slack', 'web'])
-        .describe('Platform of the target channel.'),
-    type: z.string().describe('Type of the target channel (e.g., channel).'),
-    code: z.string().describe('Code/identifier for the target channel.'),
+        .describe("The platform for the job, e.g., 'slack'."),
+    type: z.string().describe("Type of the target, e.g., 'channel'."),
+    code: z.string().describe("Identifier for the target, e.g., a Slack channel ID 'C123456'."),
     data: z
         .record(z.any())
         .optional()
-        .describe('Additional platform-specific data for the channel.')
+        .describe("Additional platform-specific data.")
 })
-    .describe('Defines the target channel for the job.');
+    .describe('Specifies the destination channel for the job.');
 // Schema for the config object
 const configSchema = z
     .object({
-    max_follow_ups: z
-        .number()
-        .int()
-        .optional()
-        .describe('Maximum number of follow-ups allowed.'),
-    max_task_retries: z
-        .number()
-        .int()
-        .optional()
-        .describe('Maximum number of retries for a task.'),
-    task_retry_interval: z
-        .number()
-        .int()
-        .optional()
-        .describe('Interval in minutes between task retries.'),
-    start_prompt: z.string().describe('The initial prompt to start the job.'),
-    max_time_to_complete: z
-        .number()
-        .int()
-        .optional()
-        .describe('Maximum time in minutes for the job to complete.'),
-    profile_id: z.string().describe('Profile ID to be used for the job.')
+    max_follow_ups: z.number().int().optional().describe("Max number of follow-ups."),
+    max_task_retries: z.number().int().optional().describe("Max retries for a task."),
+    task_retry_interval: z.number().int().optional().describe("Interval in minutes between retries."),
+    start_prompt: z.string().describe("The initial prompt to execute."),
+    max_time_to_complete: z.number().int().optional().describe("Max time in minutes for job completion."),
+    profile_id: z.string().describe("Profile ID to use for the job execution.")
 })
-    .describe('Configuration settings for the job.');
+    .describe('Defines the execution settings for the job.');
 export default (server) => {
     server.tool('create_job', 'Creates a new agent job.', {
         target_channel: targetChannelSchema,
@@ -117,34 +101,42 @@ export default (server) => {
                 headers,
                 params: queryParams
             });
-            // API returns job details under 'data' key
+            const createdJob = response.data?.data || response.data;
             return {
-                content: [
-                    {
-                        type: 'text',
-                        text: JSON.stringify(response.data, null, 2)
-                    }
-                ]
+                content: [{
+                        type: "text",
+                        text: `Successfully created job with ID '${createdJob.id}'.`,
+                    }],
+                structuredContent: {
+                    job: createdJob,
+                }
             };
         }
         catch (error) {
             let errorMessage = `Failed to create job.`;
+            let errorDetails = {};
             if (axios.isAxiosError(error) && error.response) {
                 const apiError = error.response.data?.message ||
                     error.response.data?.error ||
                     JSON.stringify(error.response.data);
                 errorMessage = `API Error (${error.response.status}): ${apiError || error.message}`;
+                errorDetails = {
+                    status: error.response.status,
+                    data: error.response.data
+                };
             }
             else if (error instanceof Error) {
                 errorMessage = `Error: ${error.message}`;
             }
             return {
-                content: [
-                    {
-                        type: 'text',
-                        text: errorMessage
-                    }
-                ]
+                content: [{
+                        type: "text",
+                        text: errorMessage,
+                    }],
+                structuredContent: {
+                    error: "Failed to create job",
+                    details: errorDetails
+                }
             };
         }
     });
