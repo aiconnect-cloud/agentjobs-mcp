@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import axios from 'axios';
 import { config } from '../config.js';
+import { flexibleDateTimeSchema } from '../utils/schemas.js';
 
 /**
  * Lightweight Agent‑Jobs creator.
@@ -38,9 +39,7 @@ export default (server: McpServer) => {
         .record(z.any())
         .optional()
         .describe('Free‑form params passed to the agent'),
-      scheduled_at: z
-        .string()
-        .datetime({ message: 'Use ISO‑8601' })
+      scheduled_at: flexibleDateTimeSchema
         .optional()
         .describe('Schedule the job to run later')
     },

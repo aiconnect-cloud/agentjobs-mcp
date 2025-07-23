@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import axios from 'axios';
 import { config } from '../config.js';
 import { formatJobList } from "../utils/formatters.js";
+import { flexibleDateTimeSchema } from "../utils/schemas.js";
 
 // Define the schema for job status based on docs/agent-jobs-api.md:246-251
 const jobStatusSchema = z.enum([
@@ -21,11 +22,11 @@ export default (server: McpServer) => {
     {
       org_id: z.string().optional().describe("Filter by organization ID. If not provided, the default from the environment is used."),
       status: jobStatusSchema.optional().describe("Filter by job status. Possible values are: 'waiting', 'scheduled', 'running', 'completed', 'failed', 'canceled'."),
-      scheduled_at: z.string().datetime().optional().describe("Filter by the exact scheduled time in ISO 8601 format (e.g., '2024-07-23T10:00:00Z')."),
-      scheduled_at_gte: z.string().datetime().optional().describe("Filter for jobs scheduled at or after a specific time (ISO 8601)."),
-      scheduled_at_lte: z.string().datetime().optional().describe("Filter for jobs scheduled at or before a specific time (ISO 8601)."),
-      created_at_gte: z.string().datetime().optional().describe("Filter for jobs created at or after a specific time (ISO 8601)."),
-      created_at_lte: z.string().datetime().optional().describe("Filter for jobs created at or before a specific time (ISO 8601)."),
+      scheduled_at: flexibleDateTimeSchema.optional().describe("Filter by the exact scheduled time in ISO 8601 format (e.g., '2024-07-23T10:00:00Z')."),
+      scheduled_at_gte: flexibleDateTimeSchema.optional().describe("Filter for jobs scheduled at or after a specific time (ISO 8601)."),
+      scheduled_at_lte: flexibleDateTimeSchema.optional().describe("Filter for jobs scheduled at or before a specific time (ISO 8601)."),
+      created_at_gte: flexibleDateTimeSchema.optional().describe("Filter for jobs created at or after a specific time (ISO 8601)."),
+      created_at_lte: flexibleDateTimeSchema.optional().describe("Filter for jobs created at or before a specific time (ISO 8601)."),
       job_type_id: z.string().optional().describe("Filter by the specific job type ID (e.g., 'daily-report')."),
       channel_code: z.string().optional().describe("Filter by the channel code (e.g., 'C123456' for a Slack channel)."),
       limit: z.number().int().positive().optional().describe("Maximum number of jobs to return (e.g.,20). Default is 20."),
