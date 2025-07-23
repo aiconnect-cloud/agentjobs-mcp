@@ -67,7 +67,7 @@ export default (server) => {
                         type: "text",
                         text: summary,
                     }],
-                metadata: {
+                structuredContent: {
                     jobs,
                     pagination: meta,
                 }
@@ -92,7 +92,7 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                metadata: {
+                structuredContent: {
                     error: "Failed to list jobs",
                     details: errorDetails
                 }

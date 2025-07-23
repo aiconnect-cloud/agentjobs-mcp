@@ -124,7 +124,7 @@ export default (server: McpServer) => {
             type: "text",
             text: `Successfully created job with ID '${createdJob.id}'.`,
           }],
-          metadata: {
+          structuredContent: {
             job: createdJob,
           }
         };
@@ -153,7 +153,7 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          metadata: {
+          structuredContent: {
             error: "Failed to create job",
             details: errorDetails
           }

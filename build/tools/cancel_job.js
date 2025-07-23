@@ -47,7 +47,7 @@ export default (server) => {
                         type: "text",
                         text: responseMessage,
                     }],
-                metadata: {
+                structuredContent: {
                     job_id,
                     status: "canceled",
                     details: response.data,
@@ -73,7 +73,7 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                metadata: {
+                structuredContent: {
                     error: `Failed to cancel job`,
                     job_id,
                     details: errorDetails

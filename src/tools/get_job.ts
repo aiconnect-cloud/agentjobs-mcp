@@ -51,7 +51,7 @@ export default (server: McpServer) => {
             type: "text",
             text: `Successfully retrieved job with ID '${job_id}'. Status: ${job.status}`,
           }],
-          metadata: {
+          structuredContent: {
             job,
           }
         };
@@ -75,7 +75,7 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          metadata: {
+          structuredContent: {
             error: `Failed to retrieve job`,
             job_id,
             details: errorDetails
