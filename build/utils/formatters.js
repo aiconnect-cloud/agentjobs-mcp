@@ -66,8 +66,8 @@ const jobTypeSchema = z.object({
         profile_id: z.string(),
         max_follow_ups: z.number(),
         max_task_retries: z.number(),
-        task_retry_interval: z.number(),
-        max_time_to_complete: z.number(),
+        task_retry_interval: z.number().describe("The interval in minutes to wait before retrying a task."),
+        max_time_to_complete: z.number().describe("The maximum time in minutes to complete a task."),
         start_prompt: z.string(),
     }),
 }).passthrough();
@@ -79,11 +79,23 @@ const jobTypeSchema = z.object({
 export function formatJobTypeDetails(jobType) {
     try {
         const parsedJobType = jobTypeSchema.parse(jobType);
-        const fullJobTypeDetails = JSON.stringify(parsedJobType, null, 2);
-        return `Job Type Details:\n\n${fullJobTypeDetails}`;
+        return `
+- ID: ${parsedJobType.id}
+- Name: ${parsedJobType.name}
+- Description: ${parsedJobType.description}
+- Organization ID: ${parsedJobType.org_id}
+
+Default Configuration:
+- Profile ID: ${parsedJobType.default_config.profile_id}
+- Max Follow-ups: ${parsedJobType.default_config.max_follow_ups}
+- Max Task Retries: ${parsedJobType.default_config.max_task_retries}
+- Task Retry Interval: ${parsedJobType.default_config.task_retry_interval} minutes
+- Max Time to Complete: ${parsedJobType.default_config.max_time_to_complete} minutes
+- Start Prompt: ${parsedJobType.default_config.start_prompt}
+    `.trim();
     }
     catch (error) {
         // If validation fails, return the object as a string.
-        return JSON.stringify(jobType, null, 2);
+        return `Invalid job type details format: ${JSON.stringify(jobType, null, 2)}`;
     }
 }
