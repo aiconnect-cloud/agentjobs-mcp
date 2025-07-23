@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobSummary } from '../utils/formatters.js';
 
 // Schema for the target_channel object
 const targetChannelSchema = z
@@ -119,14 +120,12 @@ export default (server: McpServer) => {
         });
 
         const createdJob = response.data?.data || response.data;
+        const summary = formatJobSummary(createdJob);
         return {
           content: [{
             type: "text",
-            text: `Successfully created job with ID '${createdJob.id}'.`,
-          }],
-          structuredContent: {
-            job: createdJob,
-          }
+            text: `Successfully created job:\n\n${summary}`,
+          }]
         };
       } catch (error: any) {
         let errorMessage = `Failed to create job.`;
@@ -153,10 +152,6 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          structuredContent: {
-            error: "Failed to create job",
-            details: errorDetails
-          }
         };
       }
     }

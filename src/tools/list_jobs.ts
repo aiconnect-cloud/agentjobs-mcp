@@ -2,6 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobList } from "../utils/formatters.js";
 
 // Define the schema for job status based on docs/agent-jobs-api.md:246-251
 const jobStatusSchema = z.enum([
@@ -74,17 +75,12 @@ export default (server: McpServer) => {
 
         const jobs = response.data?.data || [];
         const meta = response.data?.meta || {};
-        const summary = `Found ${jobs.length} jobs. Total available: ${meta.total || jobs.length}.`;
 
         return {
           content: [{
             type: "text",
-            text: summary,
-          }],
-          structuredContent: {
-            jobs,
-            pagination: meta,
-          }
+            text: formatJobList(jobs, meta),
+          }]
         };
       } catch (error: any) {
         let errorMessage = `Failed to list jobs.`;
@@ -106,10 +102,6 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          structuredContent: {
-            error: "Failed to list jobs",
-            details: errorDetails
-          }
         };
       }
     }

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobSummary } from '../utils/formatters.js';
 
 export default (server: McpServer) => {
   server.tool(
@@ -53,17 +54,13 @@ export default (server: McpServer) => {
           data: requestBody, // axios uses 'data' for DELETE request body
         });
 
-        const responseMessage = response.data?.message || `Job with ID '${job_id}' successfully canceled.`;
+        const canceledJob = response.data?.data || { job_id, job_status: 'canceled' };
+        const summary = formatJobSummary(canceledJob);
         return {
           content: [{
             type: "text",
-            text: responseMessage,
-          }],
-          structuredContent: {
-            job_id,
-            status: "canceled",
-            details: response.data,
-          }
+            text: `Successfully canceled job:\n\n${summary}`,
+          }]
         };
       } catch (error: any) {
         let errorMessage = `Failed to cancel job ${job_id}.`;
@@ -85,11 +82,6 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          structuredContent: {
-            error: `Failed to cancel job`,
-            job_id,
-            details: errorDetails
-          }
         };
       }
     }

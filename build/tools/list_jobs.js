@@ -1,6 +1,7 @@
 import { z } from "zod";
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobList } from "../utils/formatters.js";
 // Define the schema for job status based on docs/agent-jobs-api.md:246-251
 const jobStatusSchema = z.enum([
     "waiting",
@@ -61,16 +62,11 @@ export default (server) => {
             });
             const jobs = response.data?.data || [];
             const meta = response.data?.meta || {};
-            const summary = `Found ${jobs.length} jobs. Total available: ${meta.total || jobs.length}.`;
             return {
                 content: [{
                         type: "text",
-                        text: summary,
-                    }],
-                structuredContent: {
-                    jobs,
-                    pagination: meta,
-                }
+                        text: formatJobList(jobs, meta),
+                    }]
             };
         }
         catch (error) {
@@ -92,10 +88,6 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                structuredContent: {
-                    error: "Failed to list jobs",
-                    details: errorDetails
-                }
             };
         }
     });

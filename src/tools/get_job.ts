@@ -2,6 +2,7 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobDetails } from "../utils/formatters.js";
 
 export default (server: McpServer) => {
   server.tool(
@@ -49,11 +50,8 @@ export default (server: McpServer) => {
         return {
           content: [{
             type: "text",
-            text: `Successfully retrieved job with ID '${job_id}'. Status: ${job.status}`,
-          }],
-          structuredContent: {
-            job,
-          }
+            text: formatJobDetails(job),
+          }]
         };
       } catch (error: any) {
         let errorMessage = `Failed to retrieve job ${job_id}.`;
@@ -75,11 +73,6 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          structuredContent: {
-            error: `Failed to retrieve job`,
-            job_id,
-            details: errorDetails
-          }
         };
       }
     }

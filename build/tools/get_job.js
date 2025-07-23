@@ -1,6 +1,7 @@
 import { z } from "zod";
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobDetails } from "../utils/formatters.js";
 export default (server) => {
     server.tool("get_job", "Retrieves an agent job by its ID.", {
         job_id: z.string({
@@ -38,11 +39,8 @@ export default (server) => {
             return {
                 content: [{
                         type: "text",
-                        text: `Successfully retrieved job with ID '${job_id}'. Status: ${job.status}`,
-                    }],
-                structuredContent: {
-                    job,
-                }
+                        text: formatJobDetails(job),
+                    }]
             };
         }
         catch (error) {
@@ -64,11 +62,6 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                structuredContent: {
-                    error: `Failed to retrieve job`,
-                    job_id,
-                    details: errorDetails
-                }
             };
         }
     });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import axios from 'axios';
 import { config } from '../config.js';
+import { formatJobSummary } from '../utils/formatters.js';
 // Schema for the target_channel object
 const targetChannelSchema = z
     .object({
@@ -102,14 +103,12 @@ export default (server) => {
                 params: queryParams
             });
             const createdJob = response.data?.data || response.data;
+            const summary = formatJobSummary(createdJob);
             return {
                 content: [{
                         type: "text",
-                        text: `Successfully created job with ID '${createdJob.id}'.`,
-                    }],
-                structuredContent: {
-                    job: createdJob,
-                }
+                        text: `Successfully created job:\n\n${summary}`,
+                    }]
             };
         }
         catch (error) {
@@ -133,10 +132,6 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                structuredContent: {
-                    error: "Failed to create job",
-                    details: errorDetails
-                }
             };
         }
     });
