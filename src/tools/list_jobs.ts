@@ -81,7 +81,7 @@ export default (server: McpServer) => {
             type: "text",
             text: summary,
           }],
-          structuredContent: {
+          metadata: {
             jobs,
             pagination: meta,
           }
@@ -106,7 +106,7 @@ export default (server: McpServer) => {
             type: "text",
             text: errorMessage,
           }],
-          structuredContent: {
+          metadata: {
             error: "Failed to list jobs",
             details: errorDetails
           }

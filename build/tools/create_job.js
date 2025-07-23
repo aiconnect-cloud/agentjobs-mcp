@@ -107,7 +107,7 @@ export default (server) => {
                         type: "text",
                         text: `Successfully created job with ID '${createdJob.id}'.`,
                     }],
-                structuredContent: {
+                metadata: {
                     job: createdJob,
                 }
             };
@@ -133,7 +133,7 @@ export default (server) => {
                         type: "text",
                         text: errorMessage,
                     }],
-                structuredContent: {
+                metadata: {
                     error: "Failed to create job",
                     details: errorDetails
                 }
