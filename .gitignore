@@ -117,6 +117,7 @@ Thumbs.db
 
 # MCP specific
 .mcp/
+.mcp.json
 mcp-config.json
 
 # TypeScript incremental compilation
@@ -128,3 +129,5 @@ mcp-config.json
 # Prettier cache
 .prettierignore
 .roo
+.kilocode
+.env.debug

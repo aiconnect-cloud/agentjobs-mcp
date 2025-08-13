@@ -1,51 +1,32 @@
 import { z } from 'zod';
-import axios from 'axios';
-import { config } from '../config.js';
+import agentJobsClient from '../lib/agentJobsClient.js';
 import { formatJobDetails } from '../utils/formatters.js';
+import { mcpDebugger, withTiming } from '../utils/debugger.js';
 export default (server) => {
-    server.tool('get_job', 'Retrieves an agent job by its ID.', {
-        job_id: z.string({
-            description: "The unique identifier of the job you want to retrieve. Example: 'job-12345'."
-        }),
-        org_id: z
-            .string({
-            description: "The organization ID. Example: 'aiconnect'."
-        })
-            .optional()
+    server.registerTool('get_job', {
+        description: 'Retrieves an agent job by its ID.',
+        annotations: {
+            title: 'Get Agent Job'
+        },
+        inputSchema: {
+            job_id: z.string({
+                description: "The unique identifier of the job you want to retrieve. Example: 'job-12345'."
+            }),
+            org_id: z
+                .string({
+                description: "The organization ID. Example: 'aiconnect'."
+            })
+                .optional()
+        }
     }, async (params) => {
+        mcpDebugger.toolCall("get_job", params);
         const { job_id } = params;
-        const apiUrl = config.AICONNECT_API_URL;
-        const apiKey = config.AICONNECT_API_KEY;
-        if (!apiUrl) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'Error: API URL is not configured. Please set AICONNECT_API_URL environment variable.'
-                    }
-                ]
-            };
-        }
-        if (!apiKey) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: 'Error: API Key is not configured. Please set AICONNECT_API_KEY environment variable.'
-                    }
-                ]
-            };
-        }
-        const endpoint = `${apiUrl}/services/agent-jobs/${job_id}${params.org_id ? `?org_id=${params.org_id}` : ''}`;
-        const headers = {
-            Authorization: `Bearer ${apiKey}`
-        };
+        const endpoint = `/services/agent-jobs/${job_id}${params.org_id ? `?org_id=${params.org_id}` : ''}`;
+        mcpDebugger.debug("Built endpoint", { endpoint, job_id, org_id: params.org_id });
         try {
-            const response = await axios.get(endpoint, {
-                headers
-            });
-            const job = response.data?.data || response.data;
-            return {
+            const job = await withTiming(() => agentJobsClient.get(endpoint), "get_job API call");
+            mcpDebugger.debug("Raw API response", { job });
+            const result = {
                 content: [
                     {
                         type: 'text',
@@ -53,28 +34,19 @@ export default (server) => {
                     }
                 ]
             };
+            mcpDebugger.toolResponse("get_job", {
+                jobId: job_id,
+                resultLength: result.content[0].text.length
+            });
+            return result;
         }
         catch (error) {
-            let errorMessage = `Failed to retrieve job ${job_id}.`;
-            let errorDetails = {};
-            if (axios.isAxiosError(error) && error.response) {
-                const apiError = error.response.data?.message ||
-                    error.response.data?.error ||
-                    JSON.stringify(error.response.data);
-                errorMessage = `API Error (${error.response.status}): ${apiError || error.message}`;
-                errorDetails = {
-                    status: error.response.status,
-                    data: error.response.data
-                };
-            }
-            else if (error instanceof Error) {
-                errorMessage = `Error: ${error.message}`;
-            }
+            mcpDebugger.toolError("get_job", error);
             return {
                 content: [
                     {
                         type: 'text',
-                        text: errorMessage
+                        text: `Error getting job: ${error.message}`
                     }
                 ]
             };

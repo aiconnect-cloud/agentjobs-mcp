@@ -10,6 +10,7 @@ const jobSchema = z.object({
     result: z.string().nullable(),
     job_type_id: z.string(),
 }).passthrough(); // .passthrough() permite outros campos não definidos no schema.
+// type Job = z.infer<typeof jobSchema>;
 /**
  * Formata a resposta completa de um job, ideal para o get_job.
  * @param job - O objeto do job.
@@ -37,7 +38,7 @@ export function formatJobSummary(job) {
 - Result: ${parsedJob.result || 'N/A'}
     `.trim();
     }
-    catch (error) {
+    catch {
         // Se a validação falhar, retorna o objeto como string.
         return JSON.stringify(job, null, 2);
     }
@@ -71,6 +72,7 @@ const jobTypeSchema = z.object({
         start_prompt: z.string(),
     }),
 }).passthrough();
+// type JobType = z.infer<typeof jobTypeSchema>;
 /**
  * Formats the response for job type details.
  * @param jobType - The job type object.
@@ -94,8 +96,50 @@ Default Configuration:
 - Start Prompt: ${parsedJobType.default_config.start_prompt}
     `.trim();
     }
-    catch (error) {
+    catch {
         // If validation fails, return the object as a string.
         return `Invalid job type details format: ${JSON.stringify(jobType, null, 2)}`;
     }
+}
+export function formatJobStats(stats, filters) {
+    const { total = 0, waiting = 0, running = 0, completed = 0, failed = 0, canceled = 0, scheduled = 0, } = stats.status;
+    const totalJobs = waiting + running + completed + failed + canceled + scheduled;
+    const successRate = totalJobs > 0 ? ((completed / (totalJobs - waiting - scheduled - running)) * 100).toFixed(1) : "0.0";
+    const completionRate = (completed + failed) > 0 ? (completed / (completed + failed) * 100).toFixed(1) : "0.0";
+    const activeJobs = running + waiting + scheduled;
+    let period = "All time";
+    if (filters) {
+        if (filters.scheduled_at_gte || filters.scheduled_at_lte) {
+            const startDate = filters.scheduled_at_gte ? new Date(filters.scheduled_at_gte).toLocaleDateString() : "";
+            const endDate = filters.scheduled_at_lte ? new Date(filters.scheduled_at_lte).toLocaleDateString() : "";
+            period = `${startDate} to ${endDate}`;
+        }
+    }
+    const org = filters?.org_id ? `Organization: ${filters.org_id}` : "";
+    const percentage = (value) => {
+        if (totalJobs === 0)
+            return "0.0";
+        return ((value / totalJobs) * 100).toFixed(1);
+    };
+    return `
+Job Statistics Report
+====================
+
+Period: ${period}
+${org}
+
+Status Breakdown:
+✓ Completed:  ${completed} jobs (${percentage(completed)}%)
+⏳ Running:     ${running} jobs (${percentage(running)}%)
+⏰ Scheduled:  ${scheduled} jobs (${percentage(scheduled)}%)
+⏸ Waiting:     ${waiting} jobs (${percentage(waiting)}%)
+✗ Failed:      ${failed} jobs (${percentage(failed)}%)
+⊘ Canceled:    ${canceled} jobs (${percentage(canceled)}%)
+
+Summary:
+- Total Jobs: ${totalJobs}
+- Success Rate: ${successRate}%
+- Active Jobs: ${activeJobs} (running + waiting + scheduled)
+- Completion Rate: ${completionRate}% (completed / (completed + failed))
+  `.trim();
 }

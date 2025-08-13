@@ -4,6 +4,9 @@ dotenv.config();
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { 
+  InitializeRequestSchema
+} from "@modelcontextprotocol/sdk/types.js";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -64,10 +67,57 @@ if (args.includes('--config') || args.includes('-c')) {
   process.exit(0);
 }
 
-// Initialize server
+// Protocol version tracking
+let clientProtocolVersion: string = "2024-11-05"; // Default fallback
+let serverCapabilities: any = {
+  tools: { listChanged: true },
+  resources: {},
+  prompts: {}
+};
+
+// Initialize server with dynamic capabilities based on protocol version
 const server = new McpServer({
   name: "agentjobs-mcp",
   version: packageJson.version
+}, {
+  capabilities: serverCapabilities
+});
+
+console.error(`[DEBUG] MCP Server initialized with name: agentjobs-mcp`);
+console.error(`[DEBUG] Server version: ${packageJson.version}`);
+console.error(`[DEBUG] Default capabilities: tools, resources, prompts`);
+
+// Intercept initialization to detect protocol version
+const originalSetRequestHandler = server.server.setRequestHandler.bind(server.server);
+
+// Override initialization handler to capture protocol version
+server.server.setRequestHandler(InitializeRequestSchema, async (request) => {
+  const initParams = request.params;
+  clientProtocolVersion = initParams.protocolVersion || "2024-11-05";
+  
+  console.error(`[VERSION-NEGOTIATION] Client requested protocol: ${clientProtocolVersion}`);
+  
+  // Always use minimal capabilities to prevent loops
+  console.error(`[VERSION-NEGOTIATION] Client requested: ${clientProtocolVersion}`);
+  console.error(`[VERSION-NEGOTIATION] Using minimal capabilities to prevent infinite loops`);
+  
+  // Use only tools capability - no resources/prompts to avoid repeated calls
+  serverCapabilities = {
+    tools: {}
+  };
+  
+  console.error(`[VERSION-NEGOTIATION] Responding with our supported version: 2025-03-26`);
+  console.error(`[VERSION-NEGOTIATION] Updated capabilities:`, JSON.stringify(serverCapabilities, null, 2));
+  
+  // Return initialization response with our supported version
+  return {
+    protocolVersion: "2025-03-26", // Our SDK version
+    capabilities: serverCapabilities,
+    serverInfo: {
+      name: "agentjobs-mcp",
+      version: packageJson.version
+    }
+  };
 });
 
 // Dynamically load and register tools
@@ -79,10 +129,15 @@ try {
 
   for (const file of toolFiles) {
     if (file.endsWith('.js')) { // In production, files will be .js
-      const toolModule = await import(`./tools/${file}`);
-      if (typeof toolModule.default === 'function') {
-        toolModule.default(server);
-        console.error(`-> Registered tool: ${file}`);
+      try {
+        const toolModule = await import(`./tools/${file}`);
+        if (typeof toolModule.default === 'function') {
+          toolModule.default(server);
+          console.error(`-> Registered tool: ${file}`);
+        }
+      } catch (error) {
+        console.error(`-> Failed to register tool ${file}:`, error);
+        // Continue loading other tools
       }
     }
   }
@@ -91,10 +146,22 @@ try {
     process.exit(1);
 }
 
+console.error(`[DEBUG] Only tools capability enabled - no resources/prompts handlers needed`);
+
 // Start server with stdio transport
 const transport = new StdioServerTransport();
 
 console.error(`Starting AI Connect Agent Jobs MCP Server v${packageJson.version}...`);
+console.error('Configuration:');
+console.error(`  API URL: ${process.env.AICONNECT_API_URL || 'Using default'}`);
+console.error(`  API Key: ${process.env.AICONNECT_API_KEY ? '[SET]' : '[NOT SET]'}`);
+console.error(`  Default Org: ${process.env.DEFAULT_ORG_ID || 'aiconnect'}`);
 console.error('Server ready and listening for MCP connections');
 
-await server.connect(transport);
+// Add error handling for the server connection
+try {
+  await server.connect(transport);
+} catch (error) {
+  console.error('Error connecting MCP server:', error);
+  process.exit(1);
+}
