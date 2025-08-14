@@ -185,7 +185,38 @@ To use this MCP server with Claude Desktop, add the following configuration to y
 }
 ```
 
+### Local Development with Claude Code
+
+For development and testing, you can add this MCP server directly to your Claude Code project:
+
+```bash
+# Prerequisites: build the project first
+npm install
+npm run build
+
+# Configure your .env file
+cp .env.example .env
+# Edit .env with your API credentials
+
+# Add MCP server to Claude Code (project scope)
+claude mcp add --scope project agentjobs -- ./mcp-agentjobs.sh
+```
+
+This allows you to test and use the AgentJobs tools directly within Claude Code during development, providing immediate feedback and easier debugging.
+
 ## Available Tools
+
+### 📊 `get_jobs_stats`
+Get aggregated statistics for agent jobs without retrieving individual job data. Optimized for dashboards and monitoring with minimal network overhead.
+
+**Parameters:**
+- `scheduled_at_gte`: Start of period (ISO 8601)
+- `scheduled_at_lte`: End of period (ISO 8601)
+- `org_id`: Organization filter
+- `job_type_id`: Job type filter
+- `tags`: Tags filter (comma-separated)
+- `status`: Status filter
+- `channel_code`: Channel filter
 
 ### 🔧 `list_jobs`
 Lists all jobs with filtering and pagination options.
@@ -263,6 +294,7 @@ agentjobs-mcp/
 │   ├── index.ts           # Main MCP server entry point
 │   ├── config.ts          # Configuration loader
 │   └── tools/             # Directory for all MCP tools
+│       ├── get_jobs_stats.ts # Tool for getting job statistics
 │       ├── list_jobs.ts   # Tool for listing jobs
 │       ├── get_job.ts     # Tool for getting a job
 │       ├── create_job.ts  # Tool for creating a job
@@ -282,6 +314,40 @@ agentjobs-mcp/
 
 - `npm run build`: Compiles TypeScript
 - `npm start`: Runs the compiled server
+- `npm run debug`: Runs server in debug mode with detailed logging
+- `npm run test:tools`: Tests tool loading without starting server
+- `npm run cli:config`: Shows current configuration
+- `npm run cli:version`: Shows version information
+- `npm run cli:help`: Shows help information
+
+### Debugging
+
+For detailed debugging information, see [Debug Guide](docs/debug-guide.md).
+
+**Quick Debug Commands:**
+```bash
+# Test configuration
+npm run cli:config
+
+# Test tool loading
+npm run test:tools
+
+# Run in debug mode
+MCP_DEBUG=true npm run debug
+
+# Use debug helper script (Fish shell)
+./debug.fish help
+./debug.fish quick
+```
+
+**Debug Environment:**
+```bash
+# Copy debug environment template
+cp .env.debug .env
+# Edit .env with your API credentials
+# Run with debug environment
+./debug.fish debug-with-env
+```
 
 ### Adding new tools
 
@@ -290,6 +356,7 @@ Adding a new tool is simple:
 1. Create a new TypeScript file inside the `src/tools/` directory (e.g., `my_new_tool.ts`).
 2. Implement your tool logic following the existing pattern. The server will automatically detect and register it on startup.
 3. Recompile the project with `npm run build`.
+4. Test with `npm run test:tools` to verify loading.
 
 ## Contributing
 

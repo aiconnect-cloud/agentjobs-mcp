@@ -1,6 +1,11 @@
-// Configuration with fallback to .env.example defaults
+// Configuration for the MCP server
 export const config = {
-    DEFAULT_ORG_ID: process.env.DEFAULT_ORG_ID || 'aiconnect',
+    apiUrl: process.env.AICONNECT_API_URL || 'https://api.aiconnect.cloud/api/v0',
+    apiKey: process.env.AICONNECT_API_KEY || '',
+    defaultOrgId: process.env.DEFAULT_ORG_ID || 'aiconnect',
+    debugMode: process.env.DEBUG === 'true',
+    // Legacy compatibility
+    AICONNECT_API_URL: process.env.AICONNECT_API_URL || 'https://api.aiconnect.cloud/api/v0',
     AICONNECT_API_KEY: process.env.AICONNECT_API_KEY || '',
-    AICONNECT_API_URL: process.env.AICONNECT_API_URL || 'https://api.aiconnect.cloud/api/v0'
+    DEFAULT_ORG_ID: process.env.DEFAULT_ORG_ID || 'aiconnect'
 };
