@@ -38,18 +38,24 @@ export default (server: McpServer) => {
       });
 
       try {
-        const jobType = await withTiming(
+        const response = await withTiming(
           () => agentJobsClient.get(endpoint),
           "get_job_type API call"
         );
 
-        mcpDebugger.debug("Job type response", { jobType });
+        mcpDebugger.debug("Job type raw response", { response });
+
+        // The API returns { data: {...}, meta: {...} } but agentJobsClient should extract data
+        // However, let's be defensive and handle both cases
+        const jobTypeData = response?.data ? response.data : response;
+
+        mcpDebugger.debug("Job type extracted data", { jobTypeData });
 
         const result = {
           content: [
             {
               type: 'text' as const,
-              text: formatJobTypeDetails(jobType)
+              text: formatJobTypeDetails(jobTypeData)
             }
           ]
         };
@@ -57,7 +63,8 @@ export default (server: McpServer) => {
         mcpDebugger.toolResponse("get_job_type", {
           job_type_id,
           org_id,
-          resultLength: result.content[0].text.length
+          resultLength: result.content[0].text.length,
+          hasData: !!jobTypeData
         });
 
         return result;

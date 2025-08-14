@@ -252,42 +252,272 @@ const jobTypeSchema = z.object({
   id: z.string(),
   org_id: z.string(),
   name: z.string(),
-  description: z.string(),
+  description: z.string().optional(),
   default_config: z.object({
-    profile_id: z.string(),
-    max_follow_ups: z.number(),
-    max_task_retries: z.number(),
-    task_retry_interval: z.number().describe("The interval in minutes to wait before retrying a task."),
-    max_time_to_complete: z.number().describe("The maximum time in minutes to complete a task."),
-    start_prompt: z.string(),
-  }),
+    profile_id: z.string().optional(),
+    max_follow_ups: z.number().optional(),
+    max_task_retries: z.number().optional(),
+    task_retry_interval: z.number().optional(),
+    max_time_to_complete: z.number().optional(),
+    failure_cooldown_minutes: z.number().optional(),
+    start_prompt: z.string().optional(),
+  }).optional(),
+  params_schema: z.any().optional(),
+  version: z.union([z.string(), z.number()]).optional(),
+  visibility: z.string().optional(),
+  active: z.boolean().optional(),
+  tags: z.union([z.string(), z.array(z.string())]).optional(),
+  created_at: isoOrMs,
+  updated_at: isoOrMs,
 }).passthrough();
+
+// Formatter options interface
+export interface FormatterOptions {
+  includeSchema?: boolean;
+  schemaDepth?: number;
+  truncate?: {
+    startPrompt?: number;
+    description?: number;
+    schemaString?: number;
+  };
+  locale?: string;
+  renderAsMarkdown?: boolean;
+  showEmptySections?: boolean;
+}
+
+// Helper to summarize JSON Schema
+function summarizeSchema(schema: any, _depth = 1, limit = 12): {
+  type: string;
+  requiredCount: number;
+  propsCount: number;
+  properties: Array<{
+    name: string;
+    type: string;
+    required: boolean;
+    description?: string;
+    default?: any;
+  }>;
+} {
+  if (!schema || typeof schema !== 'object') {
+    return {
+      type: 'unknown',
+      requiredCount: 0,
+      propsCount: 0,
+      properties: []
+    };
+  }
+
+  const type = schema.type || 'unknown';
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const props = schema.properties || {};
+  const propNames = Object.keys(props);
+
+  const properties = propNames.slice(0, limit).map(name => ({
+    name,
+    type: props[name]?.type || 'any',
+    required: required.includes(name),
+    description: props[name]?.description,
+    default: props[name]?.default
+  }));
+
+  return {
+    type,
+    requiredCount: required.length,
+    propsCount: propNames.length,
+    properties
+  };
+}
 
 /**
  * Formats the response for job type details.
  * @param jobType - The job type object.
+ * @param options - Formatter options.
  * @returns A formatted string with the job type details.
  */
-export function formatJobTypeDetails(jobType: unknown): string {
-  try {
-    const parsedJobType = jobTypeSchema.parse(jobType);
-    return `
-- ID: ${parsedJobType.id}
-- Name: ${parsedJobType.name}
-- Description: ${parsedJobType.description}
-- Organization ID: ${parsedJobType.org_id}
+export function formatJobTypeDetails(jobType: unknown, options: FormatterOptions = {}): string {
+  const {
+    includeSchema = true,
+    schemaDepth = 1,
+    truncate: truncateLimits = {},
+    renderAsMarkdown = true,
+    showEmptySections = false
+  } = options;
 
-Default Configuration:
-- Profile ID: ${parsedJobType.default_config.profile_id}
-- Max Follow-ups: ${parsedJobType.default_config.max_follow_ups}
-- Max Task Retries: ${parsedJobType.default_config.max_task_retries}
-- Task Retry Interval: ${parsedJobType.default_config.task_retry_interval} minutes
-- Max Time to Complete: ${parsedJobType.default_config.max_time_to_complete} minutes
-- Start Prompt: ${parsedJobType.default_config.start_prompt}
-    `.trim();
+  const {
+    startPrompt: startPromptLimit = 500,
+    description: descriptionLimit = 400,
+    schemaString: schemaStringLimit = 1500
+  } = truncateLimits;
+
+  try {
+    const j = jobTypeSchema.parse(jobType);
+
+    // Normalize dates
+    const createdIso = toIso(j.created_at);
+    const updatedIso = toIso(j.updated_at);
+
+    // Format tags
+    const tagsList = (() => {
+      if (!j.tags) return [];
+      if (typeof j.tags === 'string') {
+        return j.tags.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return j.tags;
+    })();
+
+    // Truncate long texts
+    const descriptionText = j.description ? truncate(j.description, descriptionLimit) : undefined;
+    const startPromptText = j.default_config?.start_prompt
+      ? truncate(j.default_config.start_prompt, startPromptLimit)
+      : undefined;
+
+    // Calculate derived fields
+    const retryPolicy = j.default_config?.max_task_retries && j.default_config?.task_retry_interval
+      ? `${j.default_config.max_task_retries} every ${j.default_config.task_retry_interval} min`
+      : undefined;
+
+    const executionWindow = j.default_config?.max_time_to_complete
+      ? `${j.default_config.max_time_to_complete} min`
+      : undefined;
+
+    const cooldownInfo = j.default_config?.failure_cooldown_minutes
+      ? `${j.default_config.failure_cooldown_minutes} min`
+      : undefined;
+
+    // Summarize schema
+    const schemaSummary = j.params_schema ? summarizeSchema(j.params_schema, schemaDepth) : null;
+    const schemaPreview = j.params_schema && includeSchema ? (() => {
+      try {
+        const text = JSON.stringify(j.params_schema, null, 2);
+        return truncate(text, schemaStringLimit);
+      } catch {
+        return 'Unable to serialize schema';
+      }
+    })() : null;
+
+    // Build policies line
+    const policies = [
+      retryPolicy ? `retries up to ${retryPolicy}` : null,
+      executionWindow ? `window ${executionWindow}` : null,
+      cooldownInfo ? `cooldown ${cooldownInfo}` : null
+    ].filter(Boolean).join(' | ');
+
+    // Format output
+    const title = renderAsMarkdown ? '## Job Type Details\n' : 'Job Type Details\n===========\n';
+
+    let output = title + '\n';
+
+    // Identification
+    output += 'Identification:\n';
+    output += `- ID: ${j.id}\n`;
+    output += `- Name: ${j.name}\n`;
+    output += `- Org ID: ${j.org_id}\n`;
+    if (j.version !== undefined) output += `- Version: ${safe(j.version)}\n`;
+    if (j.visibility !== undefined) output += `- Visibility: ${safe(j.visibility)}\n`;
+    if (j.active !== undefined) output += `- Active: ${bool(j.active)}\n`;
+    output += '\n';
+
+    // Description
+    if (descriptionText || showEmptySections) {
+      output += 'Description:\n';
+      output += safe(descriptionText) + '\n\n';
+    }
+
+    // Default Config
+    if (j.default_config || showEmptySections) {
+      output += 'Default Config:\n';
+      if (j.default_config) {
+        const cfg = j.default_config;
+        if (cfg.profile_id) output += `- Profile ID: ${cfg.profile_id}\n`;
+        if (cfg.max_follow_ups !== undefined) output += `- Max Follow-ups: ${cfg.max_follow_ups}\n`;
+        if (cfg.max_task_retries !== undefined) output += `- Max Task Retries: ${cfg.max_task_retries}\n`;
+        if (cfg.task_retry_interval !== undefined) output += `- Task Retry Interval: ${cfg.task_retry_interval} min\n`;
+        if (cfg.max_time_to_complete !== undefined) output += `- Max Time to Complete: ${cfg.max_time_to_complete} min\n`;
+        if (cfg.failure_cooldown_minutes !== undefined) output += `- Failure Cooldown: ${cfg.failure_cooldown_minutes} min\n`;
+        if (startPromptText) output += `- Start Prompt: ${startPromptText}\n`;
+        if (policies) output += `- Policies: ${policies}\n`;
+      } else {
+        output += 'n/a\n';
+      }
+      output += '\n';
+    }
+
+    // Params Schema
+    if ((schemaSummary && includeSchema) || showEmptySections) {
+      output += 'Params Schema:\n';
+      if (schemaSummary) {
+        output += `- Type: ${schemaSummary.type} | Required: ${schemaSummary.requiredCount} | Properties: ${schemaSummary.propsCount}\n`;
+        if (schemaSummary.properties.length > 0) {
+          output += '- Properties:\n';
+          schemaSummary.properties.forEach(prop => {
+            const req = prop.required ? ' (required)' : '';
+            const desc = prop.description ? ` — ${truncate(prop.description, 100)}` : '';
+            const def = prop.default !== undefined ? ` — Defaults to ${JSON.stringify(prop.default)}` : '';
+            output += `  - ${prop.name}: ${prop.type}${req}${desc}${def}\n`;
+          });
+          if (schemaSummary.propsCount > schemaSummary.properties.length) {
+            output += `  - +${schemaSummary.propsCount - schemaSummary.properties.length} more…\n`;
+          }
+        }
+        if (schemaPreview) {
+          output += '- Schema preview:\n';
+          output += '```json\n' + schemaPreview + '\n```\n';
+        }
+      } else {
+        output += 'n/a\n';
+      }
+      output += '\n';
+    }
+
+    // Metadata
+    output += 'Metadata:\n';
+    output += `- Created At: ${safe(createdIso)}\n`;
+    output += `- Updated At: ${safe(updatedIso)}\n`;
+    output += `- Tags: ${fmtList(tagsList)}\n`;
+
+    return output.trim();
+  } catch (e) {
+    // If validation fails, return raw JSON
+    return `Job Type Details (raw):\n\n${JSON.stringify(jobType, null, 2)}`;
+  }
+}
+
+/**
+ * Formats a summary of a job type.
+ * @param jobType - The job type object.
+ * @returns A formatted string with the job type summary.
+ */
+export function formatJobTypeSummary(jobType: unknown): string {
+  try {
+    const j = jobTypeSchema.parse(jobType);
+
+    const retries = j.default_config?.max_task_retries && j.default_config?.task_retry_interval
+      ? `${j.default_config.max_task_retries} every ${j.default_config.task_retry_interval} min`
+      : 'n/a';
+
+    const maxTime = j.default_config?.max_time_to_complete
+      ? `${j.default_config.max_time_to_complete} min`
+      : 'n/a';
+
+    const cooldown = j.default_config?.failure_cooldown_minutes
+      ? `${j.default_config.failure_cooldown_minutes} min`
+      : 'n/a';
+
+    const schemaSummary = j.params_schema ? summarizeSchema(j.params_schema) : null;
+    const schemaInfo = schemaSummary
+      ? `required=${schemaSummary.requiredCount}, props=${schemaSummary.propsCount}`
+      : 'n/a';
+
+    return [
+      `- ID: ${j.id}`,
+      `- Name: ${j.name}`,
+      `- Active: ${bool(j.active)}`,
+      `- Retries: ${retries} | Max Time: ${maxTime} | Cooldown: ${cooldown}`,
+      `- Params: ${schemaInfo}`
+    ].join('\n');
   } catch {
-    // If validation fails, return the object as a string.
-    return `Invalid job type details format: ${JSON.stringify(jobType, null, 2)}`;
+    // If validation fails, return basic info
+    return JSON.stringify(jobType, null, 2);
   }
 }
 export function formatJobStats(stats: any, filters: any): string {
