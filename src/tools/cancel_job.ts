@@ -5,6 +5,7 @@ import { formatJobSummary } from '../utils/formatters.js';
 import { mcpDebugger, withTiming } from '../utils/debugger.js';
 
 export default (server: McpServer) => {
+  // @ts-expect-error TS2589: registerTool generic Zod inference exceeds TS depth limit with this schema.
   server.registerTool(
     "cancel_job",
     {
@@ -14,9 +15,11 @@ export default (server: McpServer) => {
       },
       inputSchema: {
         job_id: z.string({
-          description: "The unique identifier of the job to be canceled. Example: 'job-12345'.",
+          description: "The unique identifier of the job to be canceled. Example: 'job-12345'."
         }),
-        reason: z.string().optional().describe("An optional reason explaining why the job is being canceled."),
+        reason: z.string({
+          description: "An optional reason explaining why the job is being canceled."
+        }).optional()
       }
     },
     async (params) => {

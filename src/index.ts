@@ -90,8 +90,10 @@ console.error(`[DEBUG] Default capabilities: tools, resources, prompts`);
 // Intercept initialization to detect protocol version
 const originalSetRequestHandler = server.server.setRequestHandler.bind(server.server);
 
-// Override initialization handler to capture protocol version
-server.server.setRequestHandler(InitializeRequestSchema, async (request) => {
+// Override initialization handler to capture protocol version.
+// The schema is cast to `any` to short-circuit a TS2589 ("excessively deep") error
+// from generic Zod inference in @modelcontextprotocol/sdk's setRequestHandler signature.
+server.server.setRequestHandler(InitializeRequestSchema as any, async (request: any) => {
   const initParams = request.params;
   clientProtocolVersion = initParams.protocolVersion || "2024-11-05";
   
