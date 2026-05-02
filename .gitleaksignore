@@ -1,0 +1,6 @@
+# Falsos positivos: exemplos `curl ... -H "Authorization: Bearer YOUR_TOKEN"`
+# em snippets de documentação da API. O placeholder não é um segredo real.
+0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:258
+0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:290
+0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:323
+0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:330
