@@ -38,7 +38,7 @@ export default (server: McpServer) => {
           .record(z.any())
           .optional()
           .describe('Free‑form params passed to the agent'),
-        scheduled_at: flexibleDateTimeSchema
+        scheduled_at: flexibleDateTimeSchema()
           .optional()
           .describe('Schedule the job to run later')
       }
