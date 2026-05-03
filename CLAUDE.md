@@ -33,6 +33,7 @@ Loaded via `dotenv` at startup from `.env`. Defaults live in `src/config.ts` —
 - `AICONNECT_API_URL` — required for real calls. Default: `https://api.aiconnect.cloud/api/v0`.
 - `AICONNECT_API_KEY` — required. No default.
 - `DEFAULT_ORG_ID` — default: `aiconnect`. Used as fallback when a tool's `org_id` param is omitted.
+- `DEFAULT_TIMEZONE` — default: `UTC`. Informational only — surfaced via the `get_context` tool so LLM clients can format timestamps in the operation's preferred timezone. Does NOT alter behavior of other tools (timestamps are still emitted in UTC).
 - `DEBUG=true` — enables debug logging via `src/utils/debugger.ts`.
 - `.env.debug` — separate env file consumed by `src/test-tools.ts` and the debug harness.
 

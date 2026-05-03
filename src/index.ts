@@ -10,11 +10,14 @@ import {
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { mcpServerVersion } from "./utils/version.js";
 
-// Get package version
+// Get package metadata (description/homepage/author come from package.json directly;
+// version comes from the shared helper to avoid duplication).
 const packageJson = JSON.parse(
   await import('fs').then(fs => fs.readFileSync(new URL('../package.json', import.meta.url), 'utf-8'))
 );
+packageJson.version = mcpServerVersion;
 
 // CLI argument parsing
 const args = process.argv.slice(2);
@@ -62,6 +65,8 @@ if (args.includes('--config') || args.includes('-c')) {
   console.log('Current Configuration:');
   console.log(`  API URL: ${process.env.AICONNECT_API_URL || 'Not set'}`);
   console.log(`  API Key: ${process.env.AICONNECT_API_KEY ? '[SET]' : 'Not set'}`);
+  console.log(`  Default Org: ${process.env.DEFAULT_ORG_ID || 'aiconnect'}`);
+  console.log(`  Default Timezone: ${process.env.DEFAULT_TIMEZONE || 'UTC'}`);
   console.log(`  Node Version: ${process.version}`);
   console.log(`  MCP Server Version: ${packageJson.version}`);
   process.exit(0);

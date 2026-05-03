@@ -2,6 +2,26 @@ import type { AxiosInstance, AxiosError } from 'axios';
 import axios from 'axios';
 import { config } from '../config.js';
 
+export interface JobType {
+  id: string;
+  name: string;
+  description?: string;
+  emoji?: string;
+  [key: string]: any;
+}
+
+export interface ListJobTypesMeta {
+  total: number;
+  limit: number;
+  offset: number;
+  [key: string]: any;
+}
+
+export interface ListJobTypesResponse {
+  data: JobType[];
+  meta: ListJobTypesMeta;
+}
+
 class AgentJobsClient {
   private client: AxiosInstance | null = null;
 
@@ -37,6 +57,21 @@ class AgentJobsClient {
     } catch (error) {
       this.handleError(error);
     }
+  }
+
+  async listJobTypes(
+    orgId: string,
+    options: { limit?: number; offset?: number; sort?: string } = {}
+  ): Promise<ListJobTypesResponse> {
+    const params: Record<string, any> = {
+      enrich: 'emoji',
+      limit: options.limit ?? 100,
+      sort: options.sort ?? 'name:asc'
+    };
+    if (options.offset !== undefined) {
+      params.offset = options.offset;
+    }
+    return (await this.getWithMeta(`/organizations/${orgId}/agent-jobs-type`, params)) as ListJobTypesResponse;
   }
 
 async getStats(filters: Record<string, any> = {}) {

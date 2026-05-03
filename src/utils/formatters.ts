@@ -564,6 +564,76 @@ const renderDateRange = (
   return `${label}: ${left} → ${right}`;
 };
 
+export interface ContextLocalConfig {
+  org_id: string;
+  timezone: string;
+  api_url: string;
+  server_version: string;
+}
+
+export interface ContextJobType {
+  id: string;
+  name: string;
+  description?: string;
+  emoji?: string;
+}
+
+export interface FormatContextInput {
+  localConfig: ContextLocalConfig;
+  jobTypes?: ContextJobType[];
+  total?: number;
+  jobTypesError?: string;
+}
+
+const CONTEXT_LABEL_WIDTH = 16; // "Server version: " == 16 chars
+const JOB_TYPE_ID_WIDTH = 22;
+const JOB_TYPE_EMOJI_WIDTH = 4;
+
+function padLabel(label: string): string {
+  return (label + ':').padEnd(CONTEXT_LABEL_WIDTH, ' ');
+}
+
+function formatJobTypeLine(jt: ContextJobType): string {
+  const id = jt.id.padEnd(JOB_TYPE_ID_WIDTH, ' ');
+  const emoji = (jt.emoji ?? '').padEnd(JOB_TYPE_EMOJI_WIDTH, ' ');
+  const description = jt.description ? ` — ${jt.description}` : '';
+  return `  - ${id} ${emoji} ${jt.name}${description}`;
+}
+
+export function formatContext(input: FormatContextInput): string {
+  const { localConfig, jobTypes, total, jobTypesError } = input;
+
+  const contextSection = [
+    'Context:',
+    `  ${padLabel('Org ID')} ${localConfig.org_id}`,
+    `  ${padLabel('Timezone')} ${localConfig.timezone}`,
+    `  ${padLabel('API URL')} ${localConfig.api_url}`,
+    `  ${padLabel('Server version')} ${localConfig.server_version}`
+  ].join('\n');
+
+  let jobsSection: string;
+  if (jobTypesError !== undefined) {
+    jobsSection = `Job types: unavailable (error: ${jobTypesError})`;
+  } else if (jobTypes === undefined) {
+    jobsSection = 'Job types: unavailable (error: unknown)';
+  } else {
+    const totalCount = typeof total === 'number' ? total : jobTypes.length;
+    if (totalCount === 0) {
+      jobsSection = 'Job types available (0):\n  (no job types registered for this org)';
+    } else {
+      const lines = jobTypes.map(formatJobTypeLine);
+      let trailing = '';
+      if (totalCount > jobTypes.length) {
+        const missing = totalCount - jobTypes.length;
+        trailing = `\n  … and ${missing} more job types not shown`;
+      }
+      jobsSection = `Job types available (${totalCount}):\n${lines.join('\n')}${trailing}`;
+    }
+  }
+
+  return `${contextSection}\n\n${jobsSection}`;
+}
+
 export function formatJobStats(
   stats: any,
   appliedFilters: Record<string, any> | null | undefined = {}

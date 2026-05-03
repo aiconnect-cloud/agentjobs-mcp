@@ -602,3 +602,91 @@ describe('formatJobTypeSummary', () => {
     expect(result).toContain('"invalid": true');
   });
 });
+
+import { formatContext } from './formatters.js';
+
+describe('formatContext', () => {
+  const localConfig = {
+    org_id: 'woba',
+    timezone: 'America/Sao_Paulo',
+    api_url: 'https://api.aiconnect.cloud/api/v0',
+    server_version: '0.4.2'
+  };
+
+  it('formats happy path with two job types', () => {
+    const result = formatContext({
+      localConfig,
+      total: 2,
+      jobTypes: [
+        { id: 'billing-followup', name: 'Billing Follow-up', description: 'Triage de cobrança', emoji: '💳' },
+        { id: 'support-triage', name: 'Support Triage', description: 'Roteamento de suporte', emoji: '🛠️' }
+      ]
+    });
+    expect(result).toContain('Context:');
+    expect(result).toContain('Org ID:          woba');
+    expect(result).toContain('Timezone:        America/Sao_Paulo');
+    expect(result).toContain('API URL:         https://api.aiconnect.cloud/api/v0');
+    expect(result).toContain('Server version:  0.4.2');
+    expect(result).toContain('Job types available (2):');
+    expect(result).toContain('billing-followup');
+    expect(result).toContain('💳');
+    expect(result).toContain('— Triage de cobrança');
+  });
+
+  it('handles zero job types', () => {
+    const result = formatContext({ localConfig, total: 0, jobTypes: [] });
+    expect(result).toContain('Job types available (0):');
+    expect(result).toContain('(no job types registered for this org)');
+  });
+
+  it('renders error line when jobTypesError present', () => {
+    const result = formatContext({
+      localConfig,
+      jobTypesError: 'API Error (500): Internal Server Error'
+    });
+    expect(result).toContain('Context:');
+    expect(result).toContain('Org ID:          woba');
+    expect(result).toContain('Job types: unavailable (error: API Error (500): Internal Server Error)');
+    expect(result).not.toContain('Job types available');
+  });
+
+  it('preserves alignment when emoji missing', () => {
+    const result = formatContext({
+      localConfig,
+      total: 2,
+      jobTypes: [
+        { id: 'with-emoji', name: 'With Emoji', emoji: '✅' },
+        { id: 'no-emoji', name: 'No Emoji' }
+      ]
+    });
+    const lines = result.split('\n');
+    const withEmojiLine = lines.find((l) => l.includes('with-emoji'))!;
+    const noEmojiLine = lines.find((l) => l.includes('no-emoji'))!;
+    const idxWith = withEmojiLine.indexOf('With Emoji');
+    const idxNo = noEmojiLine.indexOf('No Emoji');
+    expect(idxWith).toBe(idxNo);
+    expect(result).not.toContain('undefined');
+    expect(result).not.toContain('null');
+  });
+
+  it('shows truncation hint when total > returned items', () => {
+    const jobTypes = Array.from({ length: 100 }, (_, i) => ({
+      id: `jt-${i}`,
+      name: `JT ${i}`
+    }));
+    const result = formatContext({ localConfig, total: 247, jobTypes });
+    expect(result).toContain('Job types available (247):');
+    expect(result).toContain('… and 147 more job types not shown');
+  });
+
+  it('produces byte-equal output across calls with identical input', () => {
+    const input = {
+      localConfig,
+      total: 1,
+      jobTypes: [{ id: 'a', name: 'A', emoji: '🅰️' }]
+    };
+    const a = formatContext(input);
+    const b = formatContext(input);
+    expect(a).toBe(b);
+  });
+});
