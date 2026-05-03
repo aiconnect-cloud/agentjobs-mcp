@@ -70,10 +70,12 @@ export default (server: McpServer) => {
           firstJob: jobs[0] || null
         });
 
+        const offset = typeof params.offset === 'number' ? params.offset : 0;
+
         const result = {
           content: [{
             type: "text" as const,
-            text: formatJobList(jobs, meta),
+            text: formatJobList(jobs, meta, offset),
           }]
         };
 

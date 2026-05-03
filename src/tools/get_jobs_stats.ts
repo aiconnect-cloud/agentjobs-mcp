@@ -44,14 +44,13 @@ export default (server: McpServer) => {
         );
 
         const stats = response.meta?.stats || {};
-        const filters = response.meta?.filters || {};
 
-        mcpDebugger.debug("Raw API response", { stats, filters });
+        mcpDebugger.debug("Raw API response", { stats, appliedFilters: params });
 
         const result = {
           content: [{
             type: "text" as const,
-            text: formatJobStats(stats, filters),
+            text: formatJobStats(stats, params),
           }]
         };
 
