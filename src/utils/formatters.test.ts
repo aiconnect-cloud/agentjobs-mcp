@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatJobDetails, formatJobStats, formatJobTypeDetails, formatJobTypeSummary } from './formatters.js';
+import { formatJobDetails, formatJobList, formatJobStats, formatJobTypeDetails, formatJobTypeSummary } from './formatters.js';
 
 describe('formatJobDetails', () => {
   const fullJob = {
@@ -140,6 +140,200 @@ describe('formatJobStats', () => {
     const filters = null;
     const result = formatJobStats(stats, filters);
     expect(result).toContain('Period: All time');
+  });
+
+  describe('header — Scheduled date range', () => {
+    const stats = {
+      status: { completed: 1, running: 0, failed: 0, canceled: 0, waiting: 0, scheduled: 0 },
+    };
+
+    it('renders both bounds when scheduled_at_gte and scheduled_at_lte are provided', () => {
+      const result = formatJobStats(stats, {
+        scheduled_at_gte: '2026-04-30T00:00:00Z',
+        scheduled_at_lte: '2026-05-01T00:00:00Z',
+      });
+      expect(result).toContain('Scheduled: 2026-04-30T00:00:00Z → 2026-05-01T00:00:00Z');
+      expect(result).not.toContain('Period: All time');
+    });
+
+    it('renders "(open)" upper bound when only scheduled_at_gte is provided', () => {
+      const result = formatJobStats(stats, {
+        scheduled_at_gte: '2026-04-30T00:00:00Z',
+      });
+      expect(result).toContain('Scheduled: 2026-04-30T00:00:00Z → (open)');
+    });
+
+    it('renders "(open)" lower bound when only scheduled_at_lte is provided', () => {
+      const result = formatJobStats(stats, {
+        scheduled_at_lte: '2026-05-01T00:00:00Z',
+      });
+      expect(result).toContain('Scheduled: (open) → 2026-05-01T00:00:00Z');
+    });
+
+    it('omits the Scheduled range line entirely when no scheduled_at bound is provided', () => {
+      const result = formatJobStats(stats, { status: 'failed' });
+      // The Status Breakdown contains "⏰ Scheduled:"; we only want to assert
+      // the header-range form ("Scheduled: <bound> → ...") is absent.
+      expect(result).not.toMatch(/(^|\n)Scheduled: .+→/);
+    });
+  });
+
+  describe('header — Created date range', () => {
+    const stats = {
+      status: { completed: 1, running: 0, failed: 0, canceled: 0, waiting: 0, scheduled: 0 },
+    };
+
+    it('renders both bounds when created_at_gte and created_at_lte are provided', () => {
+      const result = formatJobStats(stats, {
+        created_at_gte: '2026-04-01T00:00:00Z',
+        created_at_lte: '2026-04-30T00:00:00Z',
+      });
+      expect(result).toContain('Created: 2026-04-01T00:00:00Z → 2026-04-30T00:00:00Z');
+    });
+
+    it('renders "(open)" upper bound when only created_at_gte is provided', () => {
+      const result = formatJobStats(stats, {
+        created_at_gte: '2026-04-01T00:00:00Z',
+      });
+      expect(result).toContain('Created: 2026-04-01T00:00:00Z → (open)');
+    });
+
+    it('renders "(open)" lower bound when only created_at_lte is provided', () => {
+      const result = formatJobStats(stats, {
+        created_at_lte: '2026-04-30T00:00:00Z',
+      });
+      expect(result).toContain('Created: (open) → 2026-04-30T00:00:00Z');
+    });
+
+    it('omits the Created line entirely when no created_at bound is provided', () => {
+      const result = formatJobStats(stats, { scheduled_at_gte: '2026-04-30T00:00:00Z' });
+      expect(result).not.toContain('Created:');
+    });
+
+    it('renders both Scheduled and Created lines when both ranges are filtered', () => {
+      const result = formatJobStats(stats, {
+        scheduled_at_gte: '2026-04-30T00:00:00Z',
+        created_at_gte: '2026-04-01T00:00:00Z',
+      });
+      expect(result).toContain('Scheduled: 2026-04-30T00:00:00Z → (open)');
+      expect(result).toContain('Created: 2026-04-01T00:00:00Z → (open)');
+    });
+  });
+
+  describe('header — Period: All time fallback', () => {
+    const stats = {
+      status: { completed: 1, running: 0, failed: 0, canceled: 0, waiting: 0, scheduled: 0 },
+    };
+
+    it('renders "Period: All time" when no date filter is provided', () => {
+      const result = formatJobStats(stats, {});
+      expect(result).toContain('Period: All time');
+    });
+
+    it('does not render "Period: All time" when scheduled_at_gte is set', () => {
+      const result = formatJobStats(stats, { scheduled_at_gte: '2026-04-30T00:00:00Z' });
+      expect(result).not.toContain('Period: All time');
+    });
+
+    it('does not render "Period: All time" when created_at_lte is set', () => {
+      const result = formatJobStats(stats, { created_at_lte: '2026-04-30T00:00:00Z' });
+      expect(result).not.toContain('Period: All time');
+    });
+  });
+
+  describe('header — Filters section', () => {
+    const stats = {
+      status: { completed: 1, running: 0, failed: 0, canceled: 0, waiting: 0, scheduled: 0 },
+    };
+
+    it('renders a single line when one non-date filter is supplied', () => {
+      const result = formatJobStats(stats, { status: 'failed' });
+      expect(result).toContain('Filters:');
+      expect(result).toContain('- status: failed');
+    });
+
+    it('renders multiple lines when multiple non-date filters are supplied', () => {
+      const result = formatJobStats(stats, {
+        status: 'failed',
+        job_type_id: 'woba-supplier-ai-batch',
+      });
+      expect(result).toContain('- status: failed');
+      expect(result).toContain('- job_type_id: woba-supplier-ai-batch');
+    });
+
+    it('omits the Filters section entirely when only date filters are supplied', () => {
+      const result = formatJobStats(stats, { scheduled_at_gte: '2026-04-30T00:00:00Z' });
+      expect(result).not.toContain('Filters:');
+    });
+  });
+});
+
+describe('formatJobList', () => {
+  const sampleJob = {
+    job_id: 'job_1',
+    channel_code: 'ch_1',
+    created_at: '2026-04-30T00:00:00.000Z',
+    updated_at: '2026-04-30T00:10:00.000Z',
+    scheduled_at: '2026-04-30T00:00:00.000Z',
+    job_status: 'completed',
+    result: 'ok',
+    job_type_id: 'type_1',
+  };
+
+  it('renders the four-field footer on first page with more pages available', () => {
+    const jobs = Array.from({ length: 20 }, (_, i) => ({ ...sampleJob, job_id: `job_${i}` }));
+    const meta = { count: 20, limit: 20, total: 40 };
+    const result = formatJobList(jobs, meta, 0);
+    expect(result).toContain('Returned: 20 | Total matching: 40 | Has more: true | Next offset: 20');
+    expect(result).not.toContain('Page:');
+    expect(result).not.toContain('Total Jobs:');
+  });
+
+  it('renders Has more: false and Next offset: null on the last page', () => {
+    const jobs = Array.from({ length: 20 }, (_, i) => ({ ...sampleJob, job_id: `job_${i}` }));
+    const meta = { count: 20, limit: 20, total: 40 };
+    const result = formatJobList(jobs, meta, 20);
+    expect(result).toContain('Returned: 20 | Total matching: 40 | Has more: false | Next offset: null');
+  });
+
+  it('handles a partial last page (count < limit)', () => {
+    const jobs = Array.from({ length: 5 }, (_, i) => ({ ...sampleJob, job_id: `job_${i}` }));
+    const meta = { count: 5, limit: 20, total: 25 };
+    const result = formatJobList(jobs, meta, 20);
+    expect(result).toContain('Returned: 5 | Total matching: 25 | Has more: false | Next offset: null');
+  });
+
+  it('renders the footer on an empty result on the first page', () => {
+    const meta = { count: 0, limit: 20, total: 0 };
+    const result = formatJobList([], meta, 0);
+    expect(result).toContain('Found 0 jobs.');
+    expect(result).toContain('Returned: 0 | Total matching: 0 | Has more: false | Next offset: null');
+    expect(result).not.toContain('No jobs found for the given criteria.');
+  });
+
+  it('renders Total matching reflecting real total when offset overflows the result set', () => {
+    const meta = { count: 0, limit: 20, total: 40 };
+    const result = formatJobList([], meta, 100);
+    expect(result).toContain('Found 0 jobs.');
+    expect(result).toContain('Returned: 0 | Total matching: 40 | Has more: false | Next offset: null');
+  });
+
+  describe('fail-fast on missing meta fields', () => {
+    it('throws when meta is null', () => {
+      expect(() => formatJobList([], null as any, 0)).toThrow(/meta is required/);
+    });
+
+    it('throws when meta.total is missing', () => {
+      expect(() => formatJobList([], { count: 0, limit: 20 } as any, 0)).toThrow(
+        /meta is required.*count.*limit.*total/
+      );
+    });
+
+    it('throws when meta.count is non-numeric', () => {
+      expect(() =>
+        formatJobList([], { count: 'oops', limit: 20, total: 0 } as any, 0)
+      ).toThrow(/meta is required/);
+    });
   });
 });
 
@@ -406,5 +600,93 @@ describe('formatJobTypeSummary', () => {
     const invalidJobType = { invalid: true };
     const result = formatJobTypeSummary(invalidJobType);
     expect(result).toContain('"invalid": true');
+  });
+});
+
+import { formatContext } from './formatters.js';
+
+describe('formatContext', () => {
+  const localConfig = {
+    org_id: 'woba',
+    timezone: 'America/Sao_Paulo',
+    api_url: 'https://api.aiconnect.cloud/api/v0',
+    server_version: '0.4.2'
+  };
+
+  it('formats happy path with two job types', () => {
+    const result = formatContext({
+      localConfig,
+      total: 2,
+      jobTypes: [
+        { id: 'billing-followup', name: 'Billing Follow-up', description: 'Triage de cobrança', emoji: '💳' },
+        { id: 'support-triage', name: 'Support Triage', description: 'Roteamento de suporte', emoji: '🛠️' }
+      ]
+    });
+    expect(result).toContain('Context:');
+    expect(result).toContain('Org ID:          woba');
+    expect(result).toContain('Timezone:        America/Sao_Paulo');
+    expect(result).toContain('API URL:         https://api.aiconnect.cloud/api/v0');
+    expect(result).toContain('Server version:  0.4.2');
+    expect(result).toContain('Job types available (2):');
+    expect(result).toContain('billing-followup');
+    expect(result).toContain('💳');
+    expect(result).toContain('— Triage de cobrança');
+  });
+
+  it('handles zero job types', () => {
+    const result = formatContext({ localConfig, total: 0, jobTypes: [] });
+    expect(result).toContain('Job types available (0):');
+    expect(result).toContain('(no job types registered for this org)');
+  });
+
+  it('renders error line when jobTypesError present', () => {
+    const result = formatContext({
+      localConfig,
+      jobTypesError: 'API Error (500): Internal Server Error'
+    });
+    expect(result).toContain('Context:');
+    expect(result).toContain('Org ID:          woba');
+    expect(result).toContain('Job types: unavailable (error: API Error (500): Internal Server Error)');
+    expect(result).not.toContain('Job types available');
+  });
+
+  it('preserves alignment when emoji missing', () => {
+    const result = formatContext({
+      localConfig,
+      total: 2,
+      jobTypes: [
+        { id: 'with-emoji', name: 'With Emoji', emoji: '✅' },
+        { id: 'no-emoji', name: 'No Emoji' }
+      ]
+    });
+    const lines = result.split('\n');
+    const withEmojiLine = lines.find((l) => l.includes('with-emoji'))!;
+    const noEmojiLine = lines.find((l) => l.includes('no-emoji'))!;
+    const idxWith = withEmojiLine.indexOf('With Emoji');
+    const idxNo = noEmojiLine.indexOf('No Emoji');
+    expect(idxWith).toBe(idxNo);
+    expect(result).not.toContain('undefined');
+    expect(result).not.toContain('null');
+  });
+
+  it('shows truncation hint when total > returned items', () => {
+    const jobTypes = Array.from({ length: 100 }, (_, i) => ({
+      id: `jt-${i}`,
+      name: `JT ${i}`
+    }));
+    const result = formatContext({ localConfig, total: 247, jobTypes });
+    expect(result).toContain('Job types available (247):');
+    expect(result).toContain('… and 147 more job types not shown');
+  });
+
+  it('produces byte-equal output across calls with identical input', () => {
+    const input = {
+      localConfig,
+      total: 1,
+      jobTypes: [{ id: 'a', name: 'A', emoji: '🅰️' }]
+    };
+    const a = formatContext(input);
+    const b = formatContext(input);
+    expect(a).toBe(b);
   });
 });

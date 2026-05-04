@@ -239,6 +239,47 @@ Cancels a job by changing its status to CANCELED.
 - 404: Job not found
 - 409: Conflict (job is already in a terminal state)
 
+### List Job Types (`agent-jobs-type`)
+
+Lists agent job types registered for an organization. Used by `get_job_type` and `get_context` in this MCP.
+
+#### Path em uso pelas tools deste MCP hoje
+
+```http
+GET /organizations/:org_id/agent-jobs-type
+GET /organizations/:org_id/agent-jobs-type/:job_type_id
+```
+
+(Sem prefixo `/services/`.) **Toda tool nova neste repo deve usar este caminho** até a unificação descrita abaixo, para manter consistência com `get_job_type`.
+
+#### Path canônico upstream
+
+```http
+GET /services/organizations/:org_id/agent-jobs-type
+GET /services/organizations/:org_id/agent-jobs-type/:job_type_id
+```
+
+Este é o caminho documentado upstream pelo AI Connect API. O backend serve a mesma controller em ambos os mounts (legacy + atual). Uma migração futura para o caminho canônico deve ser feita em **change separado abrangendo todas as tools afetadas**: `get_job_type`, `list_jobs`, `create_job`, `get_jobs_stats` e `get_context`.
+
+#### Query parameters suportados
+
+- `enrich=emoji` — adiciona o campo `emoji` no payload (cache server-side de 1h por job_type).
+- `include=schema` — inclui `params_schema` completo de cada job type (não usado por `get_context`; pesado).
+- `limit` — número máximo de itens por página. `get_context` fixa em `100`.
+- `offset` — paginação numérica.
+- `sort` — formato `field:direction`, ex: `name:asc` (default usado por `get_context`).
+
+#### Response shape
+
+```json
+{
+  "data": [
+    { "id": "string", "name": "string", "description": "string?", "emoji": "string?" }
+  ],
+  "meta": { "total": 0, "limit": 100, "offset": 0 }
+}
+```
+
 ## Job Status Values
 
 Jobs can have the following status values:

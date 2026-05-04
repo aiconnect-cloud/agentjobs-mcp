@@ -33,6 +33,7 @@ Loaded via `dotenv` at startup from `.env`. Defaults live in `src/config.ts` —
 - `AICONNECT_API_URL` — required for real calls. Default: `https://api.aiconnect.cloud/api/v0`.
 - `AICONNECT_API_KEY` — required. No default.
 - `DEFAULT_ORG_ID` — default: `aiconnect`. Used as fallback when a tool's `org_id` param is omitted.
+- `DEFAULT_TIMEZONE` — default: `UTC`. Informational only — surfaced via the `get_context` tool so LLM clients can format timestamps in the operation's preferred timezone. Does NOT alter behavior of other tools (timestamps are still emitted in UTC).
 - `DEBUG=true` — enables debug logging via `src/utils/debugger.ts`.
 - `.env.debug` — separate env file consumed by `src/test-tools.ts` and the debug harness.
 
@@ -72,6 +73,16 @@ The server is intentionally small. Three layers:
 - ES modules (`"type": "module"`) with `Node16` resolution — **import paths must include the `.js` extension** even when importing from `.ts` source (e.g. `import x from "../config.js"`).
 - TypeScript `strict: true`, but `eslint.config.js` deliberately relaxes the `no-unsafe-*` family and `no-explicit-any` to keep axios/MCP-SDK ergonomics tolerable. Don't add type assertions just to satisfy stricter rules that aren't enforced.
 - Tests are colocated with source as `*.test.ts` and run by Vitest with `globals: true` (no need to import `describe`/`it`/`expect`).
+
+## Security gate
+
+Before pushing, run the `/security-scan` slash command (`.claude/commands/security-scan.md`). It runs three checks, in order:
+
+- **Secrets** — `gitleaks detect` over the working tree and git history. The repo handles `AICONNECT_API_KEY` via `.env` / `.env.debug` (both gitignored); the scan catches accidental untracking, hard-coded keys, and stray fixtures.
+- **Dependencies** — `npm audit --audit-level=high`. High/critical findings block the push; lower severities can be deferred but should be tracked.
+- **Project checks** — `npm run typecheck`, `npm run lint`, `npm test -- --run`. These mirror the gates listed in `## Common Commands`.
+
+Resolve findings — do not bypass with `--no-verify` or by silencing rules. Add real false positives to `.gitleaksignore` rather than weakening the scan.
 
 ## Behavioral Guidelines
 
