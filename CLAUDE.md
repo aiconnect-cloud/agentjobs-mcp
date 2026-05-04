@@ -4,160 +4,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an MCP (Model Context Protocol) server that enables AI agents to interact with the AI Connect Jobs platform. It provides tools for creating, managing, and monitoring asynchronous jobs across platforms like Slack and WhatsApp.
+`@aiconnect/agentjobs-mcp` is an MCP (Model Context Protocol) server that exposes AI Connect's Agent Jobs API as a set of tools an LLM client (e.g. Claude Desktop, Claude Code) can call. It is published to npm and distributed both as an `npx`-runnable binary (`agentjobs-mcp`) and as a local build. Transport is stdio only.
 
-## Essential Commands
+## Common Commands
 
-### Development
 ```bash
-# Install dependencies
-npm install
-
-# Build TypeScript to JavaScript
-npm run build
-
-# Run development (build + start)
-npm run dev
-
-# Start the server (requires build)
-npm start
+npm run build          # tsc → build/, marks build/index.js executable
+npm start              # runs compiled server (build/index.js) over stdio
+npm run dev            # build + start in one step
+npm run typecheck      # tsc --noEmit (no output, types only)
+npm run lint           # eslint . --ext .ts,.js
+npm run lint:fix       # eslint --fix
+npm test               # vitest (watches by default; tests live next to source as *.test.ts)
+npm test -- src/utils/formatters.test.ts   # run a single test file
+npm test -- -t "name"  # filter by test name
+npm run test:tools     # build + dynamically import each tool to verify it registers (no server start)
+npm run debug          # build + run src/debug.ts (interactive debug harness)
+npm run cli:config     # show resolved config (uses .env)
+npm run clean          # rm -rf build
 ```
 
-### Testing & Quality
-```bash
-# Type checking - ALWAYS run before committing
-npm run typecheck
+CLI flags handled by `src/index.ts` itself (before server start): `--help|-h`, `--version|-v`, `--config|-c`, `--stdio`.
 
-# Linting - ALWAYS run before committing
-npm run lint
-npm run lint:fix  # Auto-fix issues
+## Environment
 
-# Run tests
-npm test
+Loaded via `dotenv` at startup from `.env`. Defaults live in `src/config.ts` — the server *always* starts even if vars are missing; the failure surfaces at first tool invocation through `AgentJobsClient`.
 
-# Test tool loading without starting server
-npm run test:tools
-```
-
-### Debugging
-```bash
-# Run in debug mode with detailed logging
-npm run debug
-
-# Show current configuration
-npm run cli:config
-
-# Interactive debugging (Fish shell)
-./debug.fish help
-./debug.fish quick
-```
-
-### NPM Publishing
-```bash
-# Clean build and publish
-npm run release
-
-# Version bumps
-npm run version:patch
-npm run version:minor
-npm run version:major
-```
+- `AICONNECT_API_URL` — required for real calls. Default: `https://api.aiconnect.cloud/api/v0`.
+- `AICONNECT_API_KEY` — required. No default.
+- `DEFAULT_ORG_ID` — default: `aiconnect`. Used as fallback when a tool's `org_id` param is omitted.
+- `DEFAULT_TIMEZONE` — default: `UTC`. Informational only — surfaced via the `get_context` tool so LLM clients can format timestamps in the operation's preferred timezone. Does NOT alter behavior of other tools (timestamps are still emitted in UTC).
+- `DEBUG=true` — enables debug logging via `src/utils/debugger.ts`.
+- `.env.debug` — separate env file consumed by `src/test-tools.ts` and the debug harness.
 
 ## Architecture
 
-### Core Structure
-- **Entry Point**: `src/index.ts` - Uses standard McpServer with proper capabilities declaration, dynamically loads tools from `src/tools/` directory, handles CLI arguments
-- **MCP Server**: Uses official McpServer from SDK with tools, logging, resources, and prompts capabilities declared
-- **Tool Registration**: Tools are auto-discovered and registered from `src/tools/*.js` files at runtime using modern `registerTool()` API
+The server is intentionally small. Three layers:
 
-### Tool Pattern
-Each tool in `src/tools/` follows this structure:
-1. Default export function that receives McpServer instance
-2. Uses `server.registerTool()` (modern API) with name, configuration object including `description`, `annotations.title`, and `inputSchema`, and handler
-3. Returns MCP-compliant response format: `{ content: [{ type: "text", text: "..." }] }`
-4. Error responses include proper error handling and debugging
+1. **Entry point — `src/index.ts`**
+   - Loads `.env`, parses CLI flags, then boots an `McpServer` from `@modelcontextprotocol/sdk`.
+   - **Dynamic tool loader**: at startup, reads every `.js` file in `build/tools/`, imports it, and calls its `default(server)` export. There is no central registry — adding a file to `src/tools/` is sufficient. Tools that fail to load are logged but do not crash the server.
+   - All informational output goes to `stderr` (stdout is reserved for the MCP stdio transport).
 
-### API Client
-- `src/lib/agentJobsClient.ts` - Centralized HTTP client for AI Connect API
-- Handles authentication, error responses, and request/response formatting
-- Uses axios for HTTP requests with proper headers and error handling
+2. **HTTP client — `src/lib/agentJobsClient.ts`**
+   - Singleton axios instance, lazily constructed on first use so missing env vars only error at call time.
+   - Sends `Authorization: Bearer <key>` and `X-Client-Type: mcp` on every request.
+   - Two response shapes are unwrapped here: standard list/detail responses return `data.data ?? data`; calls passing `include=stats` return the raw payload via `getStats()` / `getWithMeta()`. When adding a new tool, pick the matching helper rather than re-implementing unwrap logic.
+   - `handleError()` normalizes axios errors into a single `Error` with `API Error (<status>): <message>`.
 
-### Configuration
-- Environment variables loaded via dotenv from `.env` file
-- `src/config.ts` exports configuration with defaults:
-  - `AICONNECT_API_URL`: Default `https://api.aiconnect.cloud/api/v0`
-  - `AICONNECT_API_KEY`: Required, no default
-  - `DEFAULT_ORG_ID`: Default `aiconnect`
+3. **Tools — `src/tools/*.ts`**
+   - Each file `export default (server: McpServer) => { server.registerTool(...) }`. One tool per file.
+   - Input schemas use Zod; common reusable schemas (e.g. `flexibleDateTimeSchema`) live in `src/utils/schemas.ts`.
+   - Output is formatted into human-readable text via `src/utils/formatters.ts` before returning `{ content: [{ type: "text", text }] }`. Prefer extending an existing formatter to inventing a new response shape.
+   - Debug tracing uses `mcpDebugger.toolCall()` and `withTiming()` from `src/utils/debugger.ts`.
 
-### Utilities
-- `src/utils/formatters.ts` - Formats job data for human-readable output
-- `src/utils/schemas.ts` - Shared Zod schemas (e.g., flexible datetime parsing)
-- `src/utils/debugger.ts` - Debug logging utilities with timing measurements
+**Canonical API reference: `docs/agent-jobs-api.md`** — when adding/modifying tools, this file (not the live API) is the source of truth for endpoint paths, request bodies, status enums, and the JobType schema. Keep tool descriptions and Zod enums in sync with it.
 
-## Available Tools
+### Adding a tool
 
-1. **list_jobs** - Query jobs with filtering, pagination, sorting
-2. **get_job** - Retrieve specific job details by ID
-3. **create_job** - Create new immediate or scheduled jobs
-4. **cancel_job** - Cancel running or scheduled jobs
-5. **get_jobs_stats** - Get aggregated statistics without individual job data
-6. **get_job_type** - Get job type configuration details
+1. Create `src/tools/<snake_case_name>.ts` with `export default (server) => server.registerTool(...)`.
+2. Reuse `agentJobsClient` (don't create a second axios instance) and a formatter from `utils/formatters.ts`.
+3. Run `npm run test:tools` — it will fail loudly if the file doesn't expose a callable default export.
+4. No registration step is needed: the dynamic loader picks it up on next build.
 
-## Adding New Tools
+## Conventions
 
-1. Create `src/tools/your_tool_name.ts`
-2. Follow existing tool pattern with Zod validation
-3. Run `npm run build` to compile
-4. Test with `npm run test:tools`
-5. Tool auto-registers on server start
+- File naming: `snake_case.ts` for tools, `camelCase.ts` for utilities and lib.
+- ES modules (`"type": "module"`) with `Node16` resolution — **import paths must include the `.js` extension** even when importing from `.ts` source (e.g. `import x from "../config.js"`).
+- TypeScript `strict: true`, but `eslint.config.js` deliberately relaxes the `no-unsafe-*` family and `no-explicit-any` to keep axios/MCP-SDK ergonomics tolerable. Don't add type assertions just to satisfy stricter rules that aren't enforced.
+- Tests are colocated with source as `*.test.ts` and run by Vitest with `globals: true` (no need to import `describe`/`it`/`expect`).
 
-## Environment Setup
+## Security gate
 
-Required environment variables:
-```env
-AICONNECT_API_URL=https://api.aiconnect.cloud/api/v0
-AICONNECT_API_KEY=your-api-key-here
-DEFAULT_ORG_ID=your-organization  # Optional, defaults to 'aiconnect'
-```
+Before pushing, run the `/security-scan` slash command (`.claude/commands/security-scan.md`). It runs three checks, in order:
 
-## Testing Considerations
+- **Secrets** — `gitleaks detect` over the working tree and git history. The repo handles `AICONNECT_API_KEY` via `.env` / `.env.debug` (both gitignored); the scan catches accidental untracking, hard-coded keys, and stray fixtures.
+- **Dependencies** — `npm audit --audit-level=high`. High/critical findings block the push; lower severities can be deferred but should be tracked.
+- **Project checks** — `npm run typecheck`, `npm run lint`, `npm test -- --run`. These mirror the gates listed in `## Common Commands`.
 
-- Test files use `.test.ts` suffix in `src/` directory
-- Vitest configured for Node environment with globals
-- Mock API responses when testing tools
-- Use `npm run test:tools` to verify tool loading without full server start
+Resolve findings — do not bypass with `--no-verify` or by silencing rules. Add real false positives to `.gitleaksignore` rather than weakening the scan.
 
-## Git Workflow
+## Behavioral Guidelines
 
-- Main branch: `main` (for PRs)
-- Development branch: `develop`
-- Current branch tracked in git status
-- Feature branches: `feature/description`
-- Bug fixes: `fix/description`
-- Follow conventional commits: `type(scope): description`
-- **Important**: Do NOT include Claude Code signature in commits (`🤖 Generated with [Claude Code]`)
+These reduce common LLM coding mistakes. They bias toward caution over speed; for trivial tasks, use judgment.
 
-## Common Development Tasks
+### 1. Think before coding
+- State assumptions explicitly. If multiple interpretations exist, surface them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
 
-When modifying tools:
-1. Edit tool file in `src/tools/`
-2. Run `npm run build` to compile
-3. Run `npm run typecheck` to verify types
-4. Run `npm run lint` to check code style
-5. Test with `npm run test:tools` or full server start
+### 2. Simplicity first
+- Minimum code that solves the problem. No speculative features, single-use abstractions, or "configurability" that wasn't asked for.
+- No error handling for impossible scenarios.
 
-When debugging API issues:
-1. Set `DEBUG=true` environment variable
-2. Use `npm run debug` for detailed logging
-3. Check `npm run cli:config` for current configuration
-4. Review API responses in debug output
+### 3. Surgical changes
+- Don't "improve" adjacent code, comments, or formatting in passing. Match existing style even if you'd write it differently.
+- Remove imports/variables that *your* changes orphaned. Don't delete pre-existing dead code unless asked.
+- Every changed line should trace directly to the user's request.
 
-## Important Notes
-
-- Tools are automatically discovered from `src/tools/` directory
-- Server follows official MCP specification with proper capabilities declaration
-- Tools use modern `registerTool()` API with titles and structured configuration
-- All datetime inputs support flexible formats via `flexibleDateTimeSchema`
-- API errors are caught and returned in standard MCP format
-- Configuration falls back to defaults when environment variables are missing
-- Comprehensive logging capability enables better debugging and observability
+### 4. Goal-driven execution
+- Convert tasks into verifiable goals: "fix the bug" → "write a failing test, then make it pass"; "refactor X" → "tests pass before and after."
+- For multi-step work, state a brief plan with a verify step per item before implementing.

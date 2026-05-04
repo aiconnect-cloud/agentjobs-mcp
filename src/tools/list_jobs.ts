@@ -26,11 +26,11 @@ export default (server: McpServer) => {
       inputSchema: {
         org_id: z.string().optional().describe("Filter by organization ID. If not provided, the default from the environment is used."),
         status: jobStatusSchema.optional().describe("Filter by job status. Possible values are: 'waiting', 'scheduled', 'running', 'completed', 'failed', 'canceled'."),
-        scheduled_at: flexibleDateTimeSchema.optional().describe("Filter by the exact scheduled time in ISO 8601 format (e.g., '2024-07-23T10:00:00Z')."),
-        scheduled_at_gte: flexibleDateTimeSchema.optional().describe("Filter for jobs scheduled at or after a specific time (ISO 8601)."),
-        scheduled_at_lte: flexibleDateTimeSchema.optional().describe("Filter for jobs scheduled at or before a specific time (ISO 8601)."),
-        created_at_gte: flexibleDateTimeSchema.optional().describe("Filter for jobs created at or after a specific time (ISO 8601)."),
-        created_at_lte: flexibleDateTimeSchema.optional().describe("Filter for jobs created at or before a specific time (ISO 8601)."),
+        scheduled_at: flexibleDateTimeSchema().optional().describe("Filter by the exact scheduled time in ISO 8601 format (e.g., '2024-07-23T10:00:00Z')."),
+        scheduled_at_gte: flexibleDateTimeSchema().optional().describe("Filter for jobs scheduled at or after a specific time (ISO 8601)."),
+        scheduled_at_lte: flexibleDateTimeSchema().optional().describe("Filter for jobs scheduled at or before a specific time (ISO 8601)."),
+        created_at_gte: flexibleDateTimeSchema().optional().describe("Filter for jobs created at or after a specific time (ISO 8601)."),
+        created_at_lte: flexibleDateTimeSchema().optional().describe("Filter for jobs created at or before a specific time (ISO 8601)."),
         job_type_id: z.string().optional().describe("Filter by the specific job type ID (e.g., 'daily-report')."),
         channel_code: z.string().optional().describe("Filter by the channel code (e.g., 'C123456' for a Slack channel)."),
         limit: z.number().int().positive().optional().describe("Maximum number of jobs to return (e.g.,20). Default is 20."),
@@ -70,10 +70,12 @@ export default (server: McpServer) => {
           firstJob: jobs[0] || null
         });
 
+        const offset = typeof params.offset === 'number' ? params.offset : 0;
+
         const result = {
           content: [{
             type: "text" as const,
-            text: formatJobList(jobs, meta),
+            text: formatJobList(jobs, meta, offset),
           }]
         };
 

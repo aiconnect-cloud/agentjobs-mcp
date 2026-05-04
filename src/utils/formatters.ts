@@ -230,21 +230,47 @@ export function formatJobSummary(job: unknown): string {
   }
 }
 
+export interface JobListMeta {
+  count: number;
+  limit: number;
+  total: number;
+}
+
 /**
  * Formata a resposta para a lista de jobs.
+ *
+ * `meta` é obrigatório e os três campos (`count`, `limit`, `total`) precisam
+ * ser numéricos — confirmado empiricamente que o backend sempre os retorna em
+ * `/services/agent-jobs`. Falha explícita aqui é preferível a inventar um
+ * footer com valores inferidos, pois isso recriaria a ambiguidade
+ * "page count vs total" que esta tool deveria eliminar.
+ *
  * @param jobs - Um array de jobs.
- * @param pagination - O objeto de paginação.
+ * @param meta - O objeto `meta` retornado pelo backend.
+ * @param offset - O `offset` que a tool enviou na requisição (default 0).
  * @returns Uma string formatada com a lista de resumos de jobs.
  */
-export function formatJobList(jobs: unknown[], pagination: any): string {
-    if (!jobs || jobs.length === 0) {
-        return "No jobs found for the given criteria.";
+export function formatJobList(jobs: unknown[], meta: JobListMeta, offset: number = 0): string {
+    if (!meta || typeof meta.count !== 'number' || typeof meta.limit !== 'number' || typeof meta.total !== 'number') {
+        throw new Error(
+            'formatJobList: meta is required with numeric `count`, `limit`, and `total`. ' +
+            `Received: ${JSON.stringify(meta)}`
+        );
     }
 
-    const jobSummaries = jobs.map(job => formatJobSummary(job)).join('\n\n');
-    const paginationSummary = `Page: ${Math.floor((pagination.offset || 0) / (pagination.limit || 20)) + 1} | Total Jobs: ${pagination.total}`;
+    const safeJobs = jobs || [];
+    const { count, limit, total } = meta;
+    const hasMore = (offset + count) < total;
+    const nextOffset = hasMore ? offset + limit : null;
 
-    return `Found ${jobs.length} jobs.\n\n${jobSummaries}\n\n${paginationSummary}`;
+    const footer = `Returned: ${count} | Total matching: ${total} | Has more: ${hasMore} | Next offset: ${nextOffset === null ? 'null' : nextOffset}`;
+
+    if (safeJobs.length === 0) {
+        return `Found 0 jobs.\n\n${footer}`;
+    }
+
+    const jobSummaries = safeJobs.map(job => formatJobSummary(job)).join('\n\n');
+    return `Found ${safeJobs.length} jobs.\n\n${jobSummaries}\n\n${footer}`;
 }
 
 // Schema for job type details
@@ -520,7 +546,98 @@ export function formatJobTypeSummary(jobType: unknown): string {
     return JSON.stringify(jobType, null, 2);
   }
 }
-export function formatJobStats(stats: any, filters: any): string {
+const DATE_FILTER_KEYS = [
+  'scheduled_at_gte',
+  'scheduled_at_lte',
+  'created_at_gte',
+  'created_at_lte',
+] as const;
+
+const renderDateRange = (
+  label: string,
+  gte: unknown,
+  lte: unknown
+): string | null => {
+  if (gte === undefined && lte === undefined) return null;
+  const left = gte !== undefined ? String(gte) : '(open)';
+  const right = lte !== undefined ? String(lte) : '(open)';
+  return `${label}: ${left} → ${right}`;
+};
+
+export interface ContextLocalConfig {
+  org_id: string;
+  timezone: string;
+  api_url: string;
+  server_version: string;
+}
+
+export interface ContextJobType {
+  id: string;
+  name: string;
+  description?: string;
+  emoji?: string;
+}
+
+export interface FormatContextInput {
+  localConfig: ContextLocalConfig;
+  jobTypes?: ContextJobType[];
+  total?: number;
+  jobTypesError?: string;
+}
+
+const CONTEXT_LABEL_WIDTH = 16; // "Server version: " == 16 chars
+const JOB_TYPE_ID_WIDTH = 22;
+const JOB_TYPE_EMOJI_WIDTH = 4;
+
+function padLabel(label: string): string {
+  return (label + ':').padEnd(CONTEXT_LABEL_WIDTH, ' ');
+}
+
+function formatJobTypeLine(jt: ContextJobType): string {
+  const id = jt.id.padEnd(JOB_TYPE_ID_WIDTH, ' ');
+  const emoji = (jt.emoji ?? '').padEnd(JOB_TYPE_EMOJI_WIDTH, ' ');
+  const description = jt.description ? ` — ${jt.description}` : '';
+  return `  - ${id} ${emoji} ${jt.name}${description}`;
+}
+
+export function formatContext(input: FormatContextInput): string {
+  const { localConfig, jobTypes, total, jobTypesError } = input;
+
+  const contextSection = [
+    'Context:',
+    `  ${padLabel('Org ID')} ${localConfig.org_id}`,
+    `  ${padLabel('Timezone')} ${localConfig.timezone}`,
+    `  ${padLabel('API URL')} ${localConfig.api_url}`,
+    `  ${padLabel('Server version')} ${localConfig.server_version}`
+  ].join('\n');
+
+  let jobsSection: string;
+  if (jobTypesError !== undefined) {
+    jobsSection = `Job types: unavailable (error: ${jobTypesError})`;
+  } else if (jobTypes === undefined) {
+    jobsSection = 'Job types: unavailable (error: unknown)';
+  } else {
+    const totalCount = typeof total === 'number' ? total : jobTypes.length;
+    if (totalCount === 0) {
+      jobsSection = 'Job types available (0):\n  (no job types registered for this org)';
+    } else {
+      const lines = jobTypes.map(formatJobTypeLine);
+      let trailing = '';
+      if (totalCount > jobTypes.length) {
+        const missing = totalCount - jobTypes.length;
+        trailing = `\n  … and ${missing} more job types not shown`;
+      }
+      jobsSection = `Job types available (${totalCount}):\n${lines.join('\n')}${trailing}`;
+    }
+  }
+
+  return `${contextSection}\n\n${jobsSection}`;
+}
+
+export function formatJobStats(
+  stats: any,
+  appliedFilters: Record<string, any> | null | undefined = {}
+): string {
   const {
     waiting = 0,
     running = 0,
@@ -536,16 +653,33 @@ export function formatJobStats(stats: any, filters: any): string {
   const completionRate = (completed + failed) > 0 ? (completed / (completed + failed) * 100).toFixed(1) : "0.0";
   const activeJobs = running + waiting + scheduled;
 
-  let period = "All time";
-  if (filters) {
-    if (filters.scheduled_at_gte || filters.scheduled_at_lte) {
-      const startDate = filters.scheduled_at_gte ? new Date(filters.scheduled_at_gte).toLocaleDateString() : "";
-      const endDate = filters.scheduled_at_lte ? new Date(filters.scheduled_at_lte).toLocaleDateString() : "";
-      period = `${startDate} to ${endDate}`;
-    }
-  }
+  const filters = appliedFilters || {};
+  const scheduledLine = renderDateRange(
+    'Scheduled',
+    filters.scheduled_at_gte,
+    filters.scheduled_at_lte
+  );
+  const createdLine = renderDateRange(
+    'Created',
+    filters.created_at_gte,
+    filters.created_at_lte
+  );
+  const hasAnyDateFilter = DATE_FILTER_KEYS.some(
+    (k) => filters[k] !== undefined
+  );
+  const periodFallback = hasAnyDateFilter ? null : 'Period: All time';
 
-  const org = filters?.org_id ? `Organization: ${filters.org_id}` : "";
+  const dateLines = [scheduledLine, createdLine, periodFallback].filter(
+    (l): l is string => l !== null
+  );
+
+  const dateFilterSet = new Set<string>(DATE_FILTER_KEYS);
+  const otherFilterEntries = Object.entries(filters).filter(
+    ([k, v]) => !dateFilterSet.has(k) && v !== undefined && v !== null && v !== ''
+  );
+  const filtersSection = otherFilterEntries.length
+    ? `Filters:\n${otherFilterEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')}\n\n`
+    : '';
 
   const percentage = (value: number) => {
     if (totalJobs === 0) return "0.0";
@@ -556,10 +690,9 @@ export function formatJobStats(stats: any, filters: any): string {
 Job Statistics Report
 ====================
 
-Period: ${period}
-${org}
+${dateLines.join('\n')}
 
-Status Breakdown:
+${filtersSection}Status Breakdown:
 ✓ Completed:  ${completed} jobs (${percentage(completed)}%)
 ⏳ Running:     ${running} jobs (${percentage(running)}%)
 ⏰ Scheduled:  ${scheduled} jobs (${percentage(scheduled)}%)

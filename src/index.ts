@@ -10,11 +10,14 @@ import {
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { mcpServerVersion } from "./utils/version.js";
 
-// Get package version
+// Get package metadata (description/homepage/author come from package.json directly;
+// version comes from the shared helper to avoid duplication).
 const packageJson = JSON.parse(
   await import('fs').then(fs => fs.readFileSync(new URL('../package.json', import.meta.url), 'utf-8'))
 );
+packageJson.version = mcpServerVersion;
 
 // CLI argument parsing
 const args = process.argv.slice(2);
@@ -62,6 +65,8 @@ if (args.includes('--config') || args.includes('-c')) {
   console.log('Current Configuration:');
   console.log(`  API URL: ${process.env.AICONNECT_API_URL || 'Not set'}`);
   console.log(`  API Key: ${process.env.AICONNECT_API_KEY ? '[SET]' : 'Not set'}`);
+  console.log(`  Default Org: ${process.env.DEFAULT_ORG_ID || 'aiconnect'}`);
+  console.log(`  Default Timezone: ${process.env.DEFAULT_TIMEZONE || 'UTC'}`);
   console.log(`  Node Version: ${process.version}`);
   console.log(`  MCP Server Version: ${packageJson.version}`);
   process.exit(0);
@@ -90,8 +95,10 @@ console.error(`[DEBUG] Default capabilities: tools, resources, prompts`);
 // Intercept initialization to detect protocol version
 const originalSetRequestHandler = server.server.setRequestHandler.bind(server.server);
 
-// Override initialization handler to capture protocol version
-server.server.setRequestHandler(InitializeRequestSchema, async (request) => {
+// Override initialization handler to capture protocol version.
+// The schema is cast to `any` to short-circuit a TS2589 ("excessively deep") error
+// from generic Zod inference in @modelcontextprotocol/sdk's setRequestHandler signature.
+server.server.setRequestHandler(InitializeRequestSchema as any, async (request: any) => {
   const initParams = request.params;
   clientProtocolVersion = initParams.protocolVersion || "2024-11-05";
   
