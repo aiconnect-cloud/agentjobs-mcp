@@ -1,5 +1,6 @@
-# Falsos positivos: exemplos `curl ... -H "Authorization: Bearer YOUR_TOKEN"`
-# em snippets de documentação da API. O placeholder não é um segredo real.
+# Falsos positivos: snippets de documentação da API com placeholders de token
+# (ex.: cabeçalho de autorização com YOUR_TOKEN). Não são segredos reais.
+8a10eb9166a5da2f8c731a082a87d724616f5932:.gitleaksignore:curl-auth-header:1
 0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:258
 0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:290
 0f9cd24d4b6d68b6fd66b1453e7ea0c11099022b:docs/agent-jobs-api.md:curl-auth-header:323
