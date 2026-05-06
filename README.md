@@ -59,12 +59,14 @@ Edit the `.env` file with your credentials:
 DEFAULT_ORG_ID=your-organization     # Default: aiconnect
 AICONNECT_API_KEY=your-api-key       # Required: Must be provided
 AICONNECT_API_URL=https://api.aiconnect.cloud/api/v0  # Default
+DEFAULT_TIMEZONE=America/Sao_Paulo   # Default: UTC (informational only, surfaced via get_context)
 ```
 
 **Important**: If no environment variables are provided, the server will use these defaults:
 - `DEFAULT_ORG_ID`: `aiconnect`
 - `AICONNECT_API_URL`: `https://api.aiconnect.cloud/api/v0`
 - `AICONNECT_API_KEY`: empty (must be provided for API calls to work)
+- `DEFAULT_TIMEZONE`: `UTC`
 
 4. **Build the project:**
 ```bash
@@ -108,6 +110,11 @@ npx @aiconnect/agentjobs-mcp
 - `AICONNECT_API_URL`: API endpoint URL (e.g., https://api.aiconnect.cloud/api/v0)
 - `AICONNECT_API_KEY`: Your API authentication key
 
+**Optional Environment Variables:**
+
+- `DEFAULT_ORG_ID`: Fallback organization ID when a tool's `org_id` parameter is omitted (default: `aiconnect`)
+- `DEFAULT_TIMEZONE`: Preferred timezone surfaced by the `get_context` tool so LLM clients can format timestamps. Informational only — does not change behavior of other tools, which continue to emit timestamps in UTC (default: `UTC`)
+
 **CLI Command Examples:**
 ```bash
 # Quick help
@@ -148,14 +155,18 @@ This MCP server is designed to work out-of-the-box with minimal configuration. I
 3. **Partial configuration**: Mix of environment variables and defaults
 
 **Default Values (when no env vars are set):**
+
 - `DEFAULT_ORG_ID`: `"aiconnect"`
 - `AICONNECT_API_URL`: `"https://api.aiconnect.cloud/api/v0"`
 - `AICONNECT_API_KEY`: `""` (empty - you must provide this)
+- `DEFAULT_TIMEZONE`: `"UTC"`
 
 **Error Handling:**
+
 - The server will always start, even if environment variables are missing.
 - If `AICONNECT_API_KEY` or `AICONNECT_API_URL` are not provided, each tool will return a clear error message upon execution, guiding the user to configure the environment correctly.
 - If `DEFAULT_ORG_ID` is not set, it defaults to "aiconnect".
+- If `DEFAULT_TIMEZONE` is not set, it defaults to "UTC". This value is purely informational (returned by the `get_context` tool) and does not affect timestamp parsing or formatting in other tools.
 
 ### Running the MCP server
 
@@ -178,7 +189,8 @@ To use this MCP server with Claude Desktop, add the following configuration to y
       "env": {
         "DEFAULT_ORG_ID": "your-organization",
         "AICONNECT_API_KEY": "your-api-key",
-        "AICONNECT_API_URL": "https://api.aiconnect.cloud/api/v0"
+        "AICONNECT_API_URL": "https://api.aiconnect.cloud/api/v0",
+        "DEFAULT_TIMEZONE": "America/Sao_Paulo"
       }
     }
   }
