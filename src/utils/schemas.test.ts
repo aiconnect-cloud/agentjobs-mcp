@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { flexibleDateTimeSchema } from './schemas.js';
+import {
+  flexibleDateTimeSchema,
+  activityStatusSchema,
+  activitySourceTypeSchema,
+  activitiesSortSchema,
+} from './schemas.js';
 
 describe('flexibleDateTimeSchema', () => {
   it('should validate a correct ISO 8601 string with Zulu time', () => {
@@ -115,5 +120,42 @@ describe('JSON Schema serialization', () => {
 
     expect(JSON.stringify(zodToJsonSchema(listJobsShape))).not.toContain('$ref');
     expect(JSON.stringify(zodToJsonSchema(statsShape))).not.toContain('$ref');
+  });
+});
+
+describe('activity enums', () => {
+  it('activityStatusSchema accepts the 3 documented values', () => {
+    expect(activityStatusSchema().safeParse('submitted').success).toBe(true);
+    expect(activityStatusSchema().safeParse('completed').success).toBe(true);
+    expect(activityStatusSchema().safeParse('canceled').success).toBe(true);
+  });
+
+  it('activityStatusSchema rejects unknown values', () => {
+    expect(activityStatusSchema().safeParse('pending').success).toBe(false);
+    expect(activityStatusSchema().safeParse('').success).toBe(false);
+  });
+
+  it('activitySourceTypeSchema accepts the 3 documented values', () => {
+    expect(activitySourceTypeSchema().safeParse('dispatch').success).toBe(true);
+    expect(activitySourceTypeSchema().safeParse('process_module').success).toBe(true);
+    expect(activitySourceTypeSchema().safeParse('direct').success).toBe(true);
+  });
+
+  it('activitySourceTypeSchema rejects unknown values', () => {
+    expect(activitySourceTypeSchema().safeParse('batch').success).toBe(false);
+  });
+
+  it('activitiesSortSchema accepts only created_at and -created_at', () => {
+    expect(activitiesSortSchema().safeParse('created_at').success).toBe(true);
+    expect(activitiesSortSchema().safeParse('-created_at').success).toBe(true);
+    expect(activitiesSortSchema().safeParse('updated_at').success).toBe(false);
+  });
+
+  it('returns fresh instances per call (no $ref collision when used twice)', () => {
+    const shape = z.object({
+      a: activityStatusSchema(),
+      b: activityStatusSchema(),
+    });
+    expect(JSON.stringify(zodToJsonSchema(shape))).not.toContain('$ref');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatJobDetails, formatJobList, formatJobStats, formatJobTypeDetails, formatJobTypeSummary } from './formatters.js';
+import { formatJobDetails, formatJobList, formatJobStats, formatJobTypeDetails, formatJobTypeSummary, formatActivityEntry, formatJobActivitiesList } from './formatters.js';
 
 describe('formatJobDetails', () => {
   const fullJob = {
@@ -688,5 +688,804 @@ describe('formatContext', () => {
     const a = formatContext(input);
     const b = formatContext(input);
     expect(a).toBe(b);
+  });
+});
+
+describe('formatActivityEntry', () => {
+  const baseActivity = {
+    id: 'act_1',
+    org_id: 'org_x',
+    activity_type_code: 'ai_completion',
+    status: 'completed',
+    allocated_credits: 10,
+    consumed_credits: 7,
+    credits_rule_id: 1,
+    created_at: '2026-05-10T12:00:00.000Z',
+    updated_at: '2026-05-10T12:00:01.000Z',
+    source: { type: 'dispatch' },
+  };
+
+  it('renders the basic compact entry', () => {
+    const out = formatActivityEntry(baseActivity);
+    expect(out).toContain('2026-05-10T12:00:00.000Z');
+    expect(out).toContain('[completed]');
+    expect(out).toContain('ai_completion');
+    expect(out).toContain('via dispatch');
+    expect(out).toContain('credits: 7/10');
+    expect(out).toContain('id: act_1');
+  });
+
+  it('truncates long payload.output to 200 chars with ellipsis', () => {
+    const longText = 'x'.repeat(500);
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: longText },
+    });
+    expect(out).toContain('output: ');
+    const lastLine = out.split('\n').find((l) => l.startsWith('  output:'))!;
+    expect(lastLine.length).toBeLessThanOrEqual('  output: '.length + 200 + 1);
+    expect(lastLine.endsWith('…')).toBe(true);
+  });
+
+  it('omits output line entirely when payloads.output is missing', () => {
+    const out = formatActivityEntry(baseActivity);
+    expect(out).not.toContain('output:');
+    expect(out).not.toContain('output: n/a');
+  });
+
+  it('renders enriched source extras', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      source: {
+        type: 'dispatch',
+        reference_id: 'ref-1',
+        execution_id: 'exec-1',
+      },
+    });
+    expect(out).toContain('via dispatch (ref: ref-1, exec: exec-1)');
+  });
+
+  it('omits absent source extras (no n/a placeholders)', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      source: { type: 'direct' },
+    });
+    expect(out).toContain('via direct');
+    expect(out).not.toContain('n/a');
+    expect(out).not.toContain('ref:');
+    expect(out).not.toContain('chat:');
+  });
+
+  it('falls back to [non-serializable] for cyclic payload', () => {
+    const cyclic: any = { foo: 1 };
+    cyclic.self = cyclic;
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: cyclic },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('falls back to [non-serializable] for Buffer payload', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: Buffer.from('hello world') },
+    });
+    expect(out).toContain('output: [non-serializable]');
+    expect(out).not.toContain('"type":"Buffer"');
+  });
+
+  it('falls back to [non-serializable] for TypedArray payload', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: new Uint8Array([1, 2, 3, 4]) },
+    });
+    expect(out).toContain('output: [non-serializable]');
+    expect(out).not.toContain('"0":1');
+  });
+
+  it('falls back to [non-serializable] for ArrayBuffer payload', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: new ArrayBuffer(8) },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('falls back to [non-serializable] when Buffer is nested inside an object', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: { attachment: Buffer.from('hello'), kind: 'image' } },
+    });
+    expect(out).toContain('output: [non-serializable]');
+    expect(out).not.toContain('"type":"Buffer"');
+    expect(out).not.toContain('"data":[');
+  });
+
+  it('falls back to [non-serializable] when TypedArray is deeply nested', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: {
+        output: { wrapper: { items: [{ blob: new Uint8Array([1, 2, 3]) }] } },
+      },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('falls back to [non-serializable] when Buffer sits inside an array', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: { items: [Buffer.from('y'), 'plain'] } },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('still serializes plain objects when no binary is present at any depth', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: {
+        output: { attachment: 'string-not-buffer', metadata: { id: 1, tags: ['a'] } },
+      },
+    });
+    expect(out).toContain('output: {"attachment":"string-not-buffer","metadata":{"id":1,"tags":["a"]}}');
+    expect(out).not.toContain('[non-serializable]');
+  });
+
+  it('does not blow up on cyclic objects when scanning for binaries', () => {
+    const cyclic: any = { foo: 1 };
+    cyclic.self = cyclic;
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: cyclic },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('detects Buffer 8 levels deep (no depth cap)', () => {
+    const deep: any = {};
+    let cursor = deep;
+    for (let i = 0; i < 7; i++) {
+      cursor.next = {};
+      cursor = cursor.next;
+    }
+    cursor.payload = Buffer.from('deep-secret');
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: deep },
+    });
+    expect(out).toContain('output: [non-serializable]');
+    expect(out).not.toContain('"type":"Buffer"');
+    expect(out).not.toContain('"data":[');
+  });
+
+  it('detects TypedArray 12 levels deep through arrays and objects', () => {
+    let cursor: any = new Uint8Array([42]);
+    for (let i = 0; i < 12; i++) {
+      cursor = i % 2 === 0 ? [cursor] : { wrap: cursor };
+    }
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: cursor },
+    });
+    expect(out).toContain('output: [non-serializable]');
+  });
+
+  it('serializes object payload as JSON', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: { foo: 'bar', n: 42 } },
+    });
+    expect(out).toContain('output: {"foo":"bar","n":42}');
+  });
+
+  it('returns unparseable hint for malformed activities', () => {
+    const out = formatActivityEntry({ wrong: 'shape' });
+    expect(out).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when status is missing', () => {
+    const { status, ...incomplete } = baseActivity;
+    void status;
+    expect(formatActivityEntry(incomplete)).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when activity_type_code is missing', () => {
+    const { activity_type_code, ...incomplete } = baseActivity;
+    void activity_type_code;
+    expect(formatActivityEntry(incomplete)).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when source is missing entirely', () => {
+    const { source, ...incomplete } = baseActivity;
+    void source;
+    expect(formatActivityEntry(incomplete)).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when source.type is missing', () => {
+    expect(
+      formatActivityEntry({ ...baseActivity, source: {} })
+    ).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when source.type is outside the documented enum', () => {
+    expect(
+      formatActivityEntry({ ...baseActivity, source: { type: 'batch' } })
+    ).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when allocated_credits or consumed_credits is missing', () => {
+    const { allocated_credits, ...noAllocated } = baseActivity;
+    void allocated_credits;
+    expect(formatActivityEntry(noAllocated)).toContain('[unparseable activity]');
+
+    const { consumed_credits, ...noConsumed } = baseActivity;
+    void consumed_credits;
+    expect(formatActivityEntry(noConsumed)).toContain('[unparseable activity]');
+  });
+
+  it('marks as unparseable when created_at is missing', () => {
+    const { created_at, ...incomplete } = baseActivity;
+    void created_at;
+    expect(formatActivityEntry(incomplete)).toContain('[unparseable activity]');
+  });
+
+  it('reproduces the reviewer scenario: { id, source.type } only is unparseable', () => {
+    expect(
+      formatActivityEntry({ id: 'a1', source: { type: 'dispatch' } })
+    ).toContain('[unparseable activity]');
+  });
+
+  it('sanitizes multiline content even on the unparseable fallback path', () => {
+    // A malformed activity must NOT visually corrupt the surrounding entries.
+    // The fallback branch that emits `[unparseable activity]` runs the same
+    // newline/CR/tab collapsing as the normal payload path.
+    const out = formatActivityEntry('line1\nline2\nline3');
+    const lines = out.split('\n');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe('- [unparseable activity] line1\\nline2\\nline3');
+  });
+
+  it('truncates oversized content on the unparseable fallback path', () => {
+    const huge = 'x'.repeat(1000);
+    const out = formatActivityEntry({ junk: huge });
+    const lines = out.split('\n');
+    expect(lines).toHaveLength(1);
+    expect(lines[0].endsWith('…')).toBe(true);
+    // Header + payload must stay within ACTIVITY_OUTPUT_MAX (200) + ellipsis +
+    // the literal "- [unparseable activity] " prefix.
+    expect(lines[0].length).toBeLessThanOrEqual('- [unparseable activity] '.length + 200 + 1);
+  });
+
+  it('marks as unparseable when status is outside the documented enum', () => {
+    // The API contract is `submitted | completed | canceled`. Anything else
+    // (e.g. "pending") indicates upstream corruption and must fail closed.
+    expect(
+      formatActivityEntry({ ...baseActivity, status: 'pending' })
+    ).toContain('[unparseable activity]');
+  });
+
+  it.each(['submitted', 'completed', 'canceled'])(
+    'accepts status %s from the documented enum',
+    (status) => {
+      const out = formatActivityEntry({ ...baseActivity, status });
+      expect(out).not.toContain('[unparseable activity]');
+      expect(out).toContain(`[${status}]`);
+    }
+  );
+
+  it('collapses LF newlines in payload.output into a single line', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: 'line1\nline2\nline3' },
+    });
+    const outputLines = out.split('\n').filter((l) => l.startsWith('  output:'));
+    expect(outputLines).toHaveLength(1);
+    expect(outputLines[0]).toBe('  output: line1\\nline2\\nline3');
+  });
+
+  it('collapses CRLF and CR newlines into escaped literals', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: 'a\r\nb\rc' },
+    });
+    expect(out).toContain('  output: a\\nb\\nc');
+    const outputLines = out.split('\n').filter((l) => l.startsWith('  output:'));
+    expect(outputLines).toHaveLength(1);
+  });
+
+  it('collapses tabs in payload.output', () => {
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: 'col1\tcol2\tcol3' },
+    });
+    expect(out).toContain('  output: col1\\tcol2\\tcol3');
+  });
+
+  it('still truncates after sanitizing multiline output', () => {
+    // Each "x\n" pair becomes "x\\n" (3 chars) after sanitizing, so 100 pairs
+    // produce 300 visible characters, comfortably above the 200 cap.
+    const noisy = 'x\n'.repeat(100);
+    const out = formatActivityEntry({
+      ...baseActivity,
+      payloads: { output: noisy },
+    });
+    const outputLine = out.split('\n').find((l) => l.startsWith('  output:'))!;
+    expect(outputLine.endsWith('…')).toBe(true);
+    expect(outputLine).not.toMatch(/\n/); // no actual newlines in the rendered line
+  });
+});
+
+describe('formatJobActivitiesList', () => {
+  const meta = { count: 2, limit: 50, total: 75 };
+  const activities = [
+    {
+      id: 'a1',
+      activity_type_code: 'ai_completion',
+      status: 'completed',
+      allocated_credits: 5,
+      consumed_credits: 3,
+      created_at: '2026-05-10T10:00:00.000Z',
+      updated_at: '2026-05-10T10:00:00.000Z',
+      source: { type: 'dispatch' },
+    },
+    {
+      id: 'a2',
+      activity_type_code: 'tool_call',
+      status: 'submitted',
+      allocated_credits: 0,
+      consumed_credits: 0,
+      created_at: '2026-05-10T10:01:00.000Z',
+      updated_at: '2026-05-10T10:01:00.000Z',
+      source: { type: 'process_module' },
+    },
+  ];
+
+  it('renders header, entries, and footer for populated list', () => {
+    const out = formatJobActivitiesList('job_x', activities, meta, 0);
+    expect(out).toContain('Activities for job job_x (showing 2):');
+    expect(out).toContain('id: a1');
+    expect(out).toContain('id: a2');
+    // Next offset advances by `count` (2), not by `limit` (50), to remain
+    // correct when the backend returns a short non-terminal page.
+    expect(out).toContain('Returned: 2 | Total matching: 75 | Has more: true | Next offset: 2');
+  });
+
+  it('renders empty-state message with full footer', () => {
+    const out = formatJobActivitiesList(
+      'job_y',
+      [],
+      { count: 0, limit: 50, total: 0 },
+      0
+    );
+    expect(out).toContain('No activities found for job job_y.');
+    expect(out).toContain('Returned: 0 | Total matching: 0 | Has more: false | Next offset: null');
+  });
+
+  it('handles pagination overflow (offset beyond total)', () => {
+    const out = formatJobActivitiesList(
+      'job_z',
+      [],
+      { count: 0, limit: 50, total: 75 },
+      100
+    );
+    expect(out).toContain('No activities found for job job_z.');
+    expect(out).toContain('Returned: 0 | Total matching: 75 | Has more: false | Next offset: null');
+  });
+
+  it('throws when meta is missing required numeric fields', () => {
+    expect(() =>
+      formatJobActivitiesList('job_y', [], { count: 0 } as any, 0)
+    ).toThrow(/formatJobActivitiesList: meta is required/);
+  });
+
+  it('advances Next offset by returned count, not by limit (short non-terminal page)', () => {
+    // The backend ships 10 rows on a page sized 50, with 100 rows still to go.
+    // Advancing by `limit` would skip 40 unseen rows; advancing by `count` is
+    // safe and correct.
+    const out = formatJobActivitiesList(
+      'job_x',
+      Array.from({ length: 10 }, (_, i) => ({
+        id: `a${i}`,
+        activity_type_code: 'x',
+        status: 'completed',
+        allocated_credits: 0,
+        consumed_credits: 0,
+        created_at: '2026-05-10T10:00:00.000Z',
+        updated_at: '2026-05-10T10:00:00.000Z',
+        source: { type: 'dispatch' },
+      })),
+      { count: 10, limit: 50, total: 100 },
+      0
+    );
+    expect(out).toContain('Returned: 10 | Total matching: 100 | Has more: true | Next offset: 10');
+  });
+
+  it('advances Next offset by count even when count equals limit', () => {
+    const out = formatJobActivitiesList(
+      'job_x',
+      Array.from({ length: 50 }, (_, i) => ({
+        id: `a${i}`,
+        activity_type_code: 'x',
+        status: 'completed',
+        allocated_credits: 0,
+        consumed_credits: 0,
+        created_at: '2026-05-10T10:00:00.000Z',
+        updated_at: '2026-05-10T10:00:00.000Z',
+        source: { type: 'dispatch' },
+      })),
+      { count: 50, limit: 50, total: 200 },
+      50
+    );
+    // offset=50 + count=50 = 100, which equals limit-based math, so this case
+    // is unchanged from the prior behavior — but anchored as a regression.
+    expect(out).toContain('Returned: 50 | Total matching: 200 | Has more: true | Next offset: 100');
+  });
+});
+
+describe('formatJobDetails with Activities', () => {
+  const baseJob = {
+    job_id: 'job_a',
+    job_type_id: 'type_a',
+    org_id: 'org_a',
+    channel_code: 'ch_a',
+    job_status: 'completed',
+    created_at: '2026-05-10T10:00:00.000Z',
+    updated_at: '2026-05-10T10:30:00.000Z',
+  };
+
+  it('omits Activities block when field is absent', () => {
+    const out = formatJobDetails(baseJob);
+    expect(out).not.toContain('Activities:');
+  });
+
+  it('renders Activities block only when overlay was requested (meta.activities_meta present)', () => {
+    const validActivity = {
+      id: 'a1',
+      activity_type_code: 'ai_completion',
+      status: 'completed',
+      allocated_credits: 1,
+      consumed_credits: 1,
+      created_at: '2026-05-10T10:05:00.000Z',
+      updated_at: '2026-05-10T10:05:00.000Z',
+      source: { type: 'dispatch' },
+    };
+    // With the signal: block renders.
+    const withMeta = formatJobDetails(
+      { ...baseJob, Activities: [validActivity] },
+      { activities_meta: { count: 1, limit: 50 } }
+    );
+    expect(withMeta).toContain('Activities:');
+    expect(withMeta).toContain('id: a1');
+    // Without the signal: block omitted, even though Activities is populated.
+    const withoutMeta = formatJobDetails({ ...baseJob, Activities: [validActivity] });
+    expect(withoutMeta).not.toContain('Activities:');
+    expect(withoutMeta).not.toContain('id: a1');
+  });
+
+  it('omits Activities block when payload leaks Activities but overlay was not requested (fail-closed)', () => {
+    // Backend leaks the field without the caller asking — formatter must keep
+    // the flag-off output byte-identical to the legacy formatter.
+    const baseline = formatJobDetails(baseJob);
+    const withLeakedActivities = formatJobDetails({
+      ...baseJob,
+      Activities: [
+        {
+          id: 'leaked',
+          activity_type_code: 'x',
+          status: 'completed',
+          allocated_credits: 0,
+          consumed_credits: 0,
+          created_at: '2026-05-10T10:05:00.000Z',
+          updated_at: '2026-05-10T10:05:00.000Z',
+          source: { type: 'dispatch' },
+        },
+      ],
+    });
+    expect(withLeakedActivities).toBe(baseline);
+    expect(withLeakedActivities).not.toContain('Activities:');
+  });
+
+  it('shows truncation warning when count > limit', () => {
+    const out = formatJobDetails(
+      {
+        ...baseJob,
+        Activities: [
+          {
+            id: 'a1',
+            activity_type_code: 'x',
+            status: 'completed',
+            allocated_credits: 0,
+            consumed_credits: 0,
+            created_at: '2026-05-10T10:05:00.000Z',
+            updated_at: '2026-05-10T10:05:00.000Z',
+            source: { type: 'dispatch' },
+          },
+        ],
+      },
+      { activities_meta: { count: 200, limit: 50 } }
+    );
+    expect(out).toContain('(showing 1 of 200 activities — use get_job_activities for full pagination)');
+  });
+
+  it('omits truncation warning when count <= limit', () => {
+    const out = formatJobDetails(
+      {
+        ...baseJob,
+        Activities: [
+          {
+            id: 'a1',
+            activity_type_code: 'x',
+            status: 'completed',
+            allocated_credits: 0,
+            consumed_credits: 0,
+            created_at: '2026-05-10T10:05:00.000Z',
+            updated_at: '2026-05-10T10:05:00.000Z',
+            source: { type: 'dispatch' },
+          },
+        ],
+      },
+      { activities_meta: { count: 12, limit: 50 } }
+    );
+    expect(out).not.toContain('use get_job_activities for full pagination');
+  });
+
+  it('signals empty Activities block when overlay was requested but job has none', () => {
+    const out = formatJobDetails(
+      baseJob,
+      { activities_meta: { count: 0, limit: 50 } }
+    );
+    expect(out).toContain('Activities:');
+    expect(out).toContain('(no activities recorded for this job)');
+  });
+
+  it('renders mixed valid + malformed Activities without falling back to raw JSON', () => {
+    // One malformed activity must NOT collapse the entire job document into the
+    // `Job Details (raw):` branch. The valid activity renders normally, the
+    // malformed one degrades to `[unparseable activity]`, and the rest of the
+    // formatted job (Identification, Channel, Type Config, etc.) is preserved.
+    const out = formatJobDetails(
+      {
+        ...baseJob,
+        Activities: [
+          {
+            id: 'a1',
+            activity_type_code: 'ai_completion',
+            status: 'completed',
+            allocated_credits: 1,
+            consumed_credits: 1,
+            created_at: '2026-05-10T10:05:00.000Z',
+            updated_at: '2026-05-10T10:05:00.000Z',
+            source: { type: 'dispatch' },
+          },
+          { id: 'a2', source: { type: 'dispatch' } }, // malformed: missing required fields
+        ],
+      },
+      { activities_meta: { count: 2, limit: 50 } }
+    );
+    expect(out).not.toContain('Job Details (raw):');
+    expect(out).toContain('Job ID: job_a');
+    expect(out).toContain('id: a1');
+    expect(out).toContain('[unparseable activity]');
+  });
+
+  it('preserves byte-identical output when no meta is passed (flag-off regression)', () => {
+    const before = formatJobDetails(baseJob);
+    const after = formatJobDetails(baseJob, undefined);
+    expect(after).toBe(before);
+    expect(before).not.toContain('Activities:');
+    expect(before).not.toContain('(no activities recorded');
+  });
+
+  it('preserves byte-identical output when meta is empty object (no activities_meta)', () => {
+    const baseline = formatJobDetails(baseJob);
+    const out = formatJobDetails(baseJob, {});
+    expect(out).toBe(baseline);
+    expect(out).not.toContain('Activities:');
+  });
+});
+
+describe('formatJobSummary activities counting', () => {
+  const job = {
+    job_id: 'j1',
+    channel_code: 'ch1',
+    created_at: '2026-05-10T10:00:00.000Z',
+    updated_at: '2026-05-10T10:00:00.000Z',
+    scheduled_at: '2026-05-10T09:55:00.000Z',
+    job_status: 'completed',
+    result: null,
+    job_type_id: 't1',
+  };
+
+  it('shows total when activities_count exists and overlay is absent', () => {
+    const out = formatJobList([{ ...job, activities_count: 347 }], { count: 1, limit: 20, total: 1 }, 0);
+    expect(out).toContain('Activities: 347');
+    expect(out).not.toContain('overlay:');
+  });
+
+  it('prefers activities_count over Activities.length and surfaces the overlay cap (flag-on)', () => {
+    const overlay = Array.from({ length: 15 }, (_, i) => ({ id: `a${i}` }));
+    const out = formatJobList(
+      [{ ...job, activities_count: 347, Activities: overlay }],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities: 347 (overlay: 15)');
+  });
+
+  it('surfaces divergence when overlay is larger than activities_count (flag-on backend mismatch)', () => {
+    const overlay = Array.from({ length: 7 }, (_, i) => ({ id: `a${i}` }));
+    const out = formatJobList(
+      [{ ...job, activities_count: 5, Activities: overlay }],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities: 5 (overlay: 7)');
+  });
+
+  it('falls back to Activities.length when activities_count is missing (flag-on)', () => {
+    const overlay = [{ id: 'a1' }, { id: 'a2' }];
+    const out = formatJobList(
+      [{ ...job, Activities: overlay }],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities: 2');
+    expect(out).not.toContain('overlay:');
+  });
+
+  it('omits the activities line when neither field is present', () => {
+    const out = formatJobList([job], { count: 1, limit: 20, total: 1 }, 0);
+    expect(out).not.toContain('Activities:');
+  });
+
+  it('shows just the count (no overlay parens) when overlay matches activities_count', () => {
+    const overlay = [{ id: 'a1' }, { id: 'a2' }];
+    const out = formatJobList(
+      [{ ...job, activities_count: 2, Activities: overlay }],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities: 2');
+    expect(out).not.toContain('overlay:');
+  });
+
+  it('flag-off ignores leaked Activities array entirely (line omitted when no activities_count)', () => {
+    // Backend leaks Activities into the payload without the caller asking. The
+    // overlay must NOT influence the summary — and with no `activities_count`,
+    // the line is omitted entirely.
+    const out = formatJobList(
+      [{ ...job, Activities: [{ id: 'leaked' }] }],
+      { count: 1, limit: 20, total: 1 },
+      0
+      // no options arg → includeActivities is undefined → flag-off
+    );
+    expect(out).not.toContain('Activities:');
+    expect(out).not.toContain('id: leaked');
+  });
+
+  it('flag-off shows activities_count only, never the overlay-divergence suffix', () => {
+    // `activities_count` is always-on (server-maintained, not gated), but the
+    // overlay-divergence suffix `(overlay: N)` must NOT appear without the flag.
+    const out = formatJobList(
+      [{ ...job, activities_count: 5, Activities: [{ id: 'leaked' }] }],
+      { count: 1, limit: 20, total: 1 },
+      0
+      // no options arg → flag-off
+    );
+    expect(out).toContain('Activities: 5');
+    expect(out).not.toContain('overlay:');
+    expect(out).not.toContain('id: leaked');
+  });
+
+  it('flag-on still renders the overlay-divergence suffix when count and overlay differ', () => {
+    const overlay = Array.from({ length: 15 }, (_, i) => ({ id: `a${i}` }));
+    const out = formatJobList(
+      [{ ...job, activities_count: 347, Activities: overlay }],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities: 347 (overlay: 15)');
+  });
+});
+
+describe('formatJobList with activities_truncated', () => {
+  const job = {
+    job_id: 'j1',
+    channel_code: 'ch1',
+    created_at: '2026-05-10T10:00:00.000Z',
+    updated_at: '2026-05-10T10:00:00.000Z',
+    scheduled_at: '2026-05-10T09:55:00.000Z',
+    job_status: 'completed',
+    result: null,
+    job_type_id: 't1',
+  };
+
+  it('appends truncation footer line when activities_truncated=true and includeActivities option is on', () => {
+    const out = formatJobList(
+      [job],
+      {
+        count: 1,
+        limit: 20,
+        total: 1,
+        activities_truncated: true,
+        activities_total_returned: 45,
+        activities_total_available: 120,
+      },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities truncated: yes (returned 45 of 120 available)');
+  });
+
+  it('omits truncation line when activities_truncated=true but includeActivities option is off (fail-closed)', () => {
+    // Even if the backend leaks `activities_truncated: true` without the caller
+    // requesting activities, the footer must not show the line.
+    const out = formatJobList(
+      [job],
+      {
+        count: 1,
+        limit: 20,
+        total: 1,
+        activities_truncated: true,
+        activities_total_returned: 45,
+        activities_total_available: 120,
+      },
+      0,
+      { includeActivities: false }
+    );
+    expect(out).not.toContain('Activities truncated:');
+  });
+
+  it('omits truncation line when options arg is omitted entirely', () => {
+    const out = formatJobList(
+      [job],
+      { count: 1, limit: 20, total: 1, activities_truncated: true },
+      0
+    );
+    expect(out).not.toContain('Activities truncated:');
+  });
+
+  it('does not include truncation line when activities_truncated=false', () => {
+    const out = formatJobList(
+      [job],
+      { count: 1, limit: 20, total: 1, activities_truncated: false },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).not.toContain('Activities truncated:');
+  });
+
+  it('does not include truncation line when flag is absent', () => {
+    const out = formatJobList(
+      [job],
+      { count: 1, limit: 20, total: 1 },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).not.toContain('Activities truncated:');
+  });
+
+  it('uses ? placeholder when truncated=true but counters are missing', () => {
+    const out = formatJobList(
+      [job],
+      { count: 1, limit: 20, total: 1, activities_truncated: true },
+      0,
+      { includeActivities: true }
+    );
+    expect(out).toContain('Activities truncated: yes (returned ? of ? available)');
+  });
+
+  it('renders activities count inline when job has activities_count', () => {
+    const out = formatJobList(
+      [{ ...job, activities_count: 7 }],
+      { count: 1, limit: 20, total: 1 },
+      0
+    );
+    expect(out).toContain('Activities: 7');
   });
 });

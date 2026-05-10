@@ -5,6 +5,8 @@ import { formatJobList } from "../utils/formatters.js";
 import { flexibleDateTimeSchema } from "../utils/schemas.js";
 import { mcpDebugger, withTiming } from "../utils/debugger.js";
 
+const ACTIVITIES_SORT_VALUES = ['created_at', '-created_at'] as const;
+
 // Define the schema for job status based on docs/agent-jobs-api.md:246-251
 const jobStatusSchema = z.enum([
   "waiting",
@@ -35,7 +37,19 @@ export default (server: McpServer) => {
         channel_code: z.string().optional().describe("Filter by the channel code (e.g., 'C123456' for a Slack channel)."),
         limit: z.number().int().positive().optional().describe("Maximum number of jobs to return (e.g.,20). Default is 20."),
         offset: z.number().int().nonnegative().optional().describe("Number of jobs to skip, used for pagination. Default is 0."),
-        sort: z.string().optional().describe("Field to sort by and direction. Format is 'field:direction'. Example: 'created_at:desc'.")
+        sort: z.string().optional().describe("Field to sort by and direction. Format is 'field:direction'. Example: 'created_at:desc'."),
+        include_activities: z.boolean().optional().describe(
+          "When true, attaches activities to each job in the list (?include=activities). For full pagination of a single job's activities use the get_job_activities tool."
+        ),
+        activities_limit_per_job: z.number().int().optional().describe(
+          "Max activities per job when include_activities=true. Range 1-100, default 15. Silently ignored when include_activities is false/omitted."
+        ),
+        activities_total_limit: z.number().int().optional().describe(
+          "Global cap on total activities returned across all jobs in the response when include_activities=true. Range 1-3000, default 500. Silently ignored when include_activities is false/omitted."
+        ),
+        activities_sort: z.string().optional().describe(
+          "Sort order for attached activities when include_activities=true. 'created_at' or '-created_at' (default). Silently ignored when include_activities is false/omitted."
+        )
       }
     },
     async (params) => {
@@ -43,12 +57,42 @@ export default (server: McpServer) => {
 
       const endpoint = `/services/agent-jobs`;
 
-      // Build query parameters object from provided params
+      const { include_activities, activities_limit_per_job, activities_total_limit, activities_sort, ...rest } = params;
+
       const queryParams: Record<string, any> = {};
-      for (const [key, value] of Object.entries(params)) {
+      for (const [key, value] of Object.entries(rest)) {
         if (value !== undefined) {
           queryParams[key] = value;
         }
+      }
+      if (include_activities) {
+        // Per spec, range/enum on the overlay-only params are validated here
+        // (not in the Zod input schema) so that flag-off callers carrying stale
+        // configuration are silently tolerated. With the flag on, invalid
+        // values short-circuit before any HTTP call.
+        if (activities_limit_per_job !== undefined) {
+          if (!Number.isInteger(activities_limit_per_job) || activities_limit_per_job < 1 || activities_limit_per_job > 100) {
+            return {
+              content: [{ type: 'text' as const, text: 'Error listing jobs: activities_limit_per_job must be an integer in [1, 100]' }],
+            };
+          }
+        }
+        if (activities_total_limit !== undefined) {
+          if (!Number.isInteger(activities_total_limit) || activities_total_limit < 1 || activities_total_limit > 3000) {
+            return {
+              content: [{ type: 'text' as const, text: 'Error listing jobs: activities_total_limit must be an integer in [1, 3000]' }],
+            };
+          }
+        }
+        if (activities_sort !== undefined && !(ACTIVITIES_SORT_VALUES as readonly string[]).includes(activities_sort)) {
+          return {
+            content: [{ type: 'text' as const, text: "Error listing jobs: activities_sort must be 'created_at' or '-created_at'" }],
+          };
+        }
+        queryParams.include = 'activities';
+        queryParams.activities_limit_per_job = activities_limit_per_job ?? 15;
+        queryParams.activities_total_limit = activities_total_limit ?? 500;
+        queryParams.activities_sort = activities_sort ?? '-created_at';
       }
 
       mcpDebugger.debug("Built query parameters", { endpoint, queryParams });
@@ -75,7 +119,7 @@ export default (server: McpServer) => {
         const result = {
           content: [{
             type: "text" as const,
-            text: formatJobList(jobs, meta, offset),
+            text: formatJobList(jobs, meta, offset, { includeActivities: include_activities === true }),
           }]
         };
 

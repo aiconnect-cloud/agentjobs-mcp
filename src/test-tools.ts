@@ -27,7 +27,7 @@ async function testTools() {
     console.log(`📁 Found ${toolFiles.length} tool files`);
 
     for (const file of toolFiles) {
-      if (file.endsWith('.js')) {
+      if (file.endsWith('.js') && !file.endsWith('.test.js')) {
         try {
           console.log(`⚙️  Loading tool: ${file}`);
           const toolModule = await import(`./tools/${file}`);

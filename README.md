@@ -240,12 +240,32 @@ Lists all jobs with filtering and pagination options.
 - `limit` (optional): Result limit (default: 50)
 - `offset` (optional): Pagination offset
 - `sort` (optional): Field and direction for sorting
+- `include_activities` (optional): Attach recent activities to each job (default: false)
+- `activities_limit_per_job` (optional): Max activities per job (1–100, default 15)
+- `activities_total_limit` (optional): Global cap across the response (1–3000, default 500)
+- `activities_sort` (optional): `created_at` or `-created_at` (default `-created_at`)
 
 ### 🔍 `get_job`
 Gets details of a specific job.
 
 **Parameters:**
 - `job_id` (required): ID of the job to query
+- `include_activities` (optional): Attach recent activities as an inline overlay (default: false)
+- `include_limit` (optional): Max activities to attach (1–100, default 50)
+- `include_sort` (optional): `created_at` or `-created_at` (default `-created_at`)
+
+### 🧾 `get_job_activities`
+Retrieves the audit activity trail for a specific agent job via the dedicated `/services/activities` endpoint. Supports real pagination (no truncation) and server-side filtering. Use this for focused investigation of a job's activity log; for a quick overlay of recent activities, use `get_job` with `include_activities=true`.
+
+**Parameters:**
+- `job_id` (required): ID of the agent job
+- `org_id` (optional): Organization scope
+- `status` (optional): `submitted`, `completed`, or `canceled`
+- `activity_type_code` (optional): Open-string code (e.g., `ai_completion`)
+- `source_type` (optional): `dispatch`, `process_module`, or `direct`
+- `limit` (optional): Page size (default 50)
+- `offset` (optional): Pagination offset (default 0)
+- `sort` (optional): Sort field/direction (default `-created_at`)
 
 ### ✅ `create_job`
 Creates a new job for execution.
@@ -306,11 +326,12 @@ agentjobs-mcp/
 │   ├── index.ts           # Main MCP server entry point
 │   ├── config.ts          # Configuration loader
 │   └── tools/             # Directory for all MCP tools
-│       ├── get_jobs_stats.ts # Tool for getting job statistics
-│       ├── list_jobs.ts   # Tool for listing jobs
-│       ├── get_job.ts     # Tool for getting a job
-│       ├── create_job.ts  # Tool for creating a job
-│       └── cancel_job.ts  # Tool for canceling a job
+│       ├── get_jobs_stats.ts     # Tool for getting job statistics
+│       ├── list_jobs.ts          # Tool for listing jobs
+│       ├── get_job.ts            # Tool for getting a job
+│       ├── get_job_activities.ts # Tool for getting a job's activity trail
+│       ├── create_job.ts         # Tool for creating a job
+│       └── cancel_job.ts         # Tool for canceling a job
 ├── build/                 # Compiled JavaScript code
 ├── docs/                  # Documentation
 │   └── agent-jobs-api.md  # API documentation
