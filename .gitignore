@@ -90,3 +90,8 @@ CLAUDE.local.md
 .claude/secrets*
 .claude/**/secrets*
 .claude/**/.env
+
+# ============================================================
+# OpenSpec — uso local, não publicar nem versionar
+# ============================================================
+openspec/
