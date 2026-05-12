@@ -69,7 +69,6 @@
   },
   "files": [
     "build/**/*",
-    "docs/**/*",
     "README.md",
     "package.json",
     ".env.example"
