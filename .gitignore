@@ -90,3 +90,4 @@ CLAUDE.local.md
 .claude/secrets*
 .claude/**/secrets*
 .claude/**/.env
+openspec/
