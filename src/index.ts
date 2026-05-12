@@ -135,7 +135,7 @@ try {
   const toolFiles = await fs.readdir(toolsDir);
 
   for (const file of toolFiles) {
-    if (file.endsWith('.js')) { // In production, files will be .js
+    if (file.endsWith('.js') && !file.endsWith('.test.js')) { // In production, files will be .js (exclude colocated tests)
       try {
         const toolModule = await import(`./tools/${file}`);
         if (typeof toolModule.default === 'function') {

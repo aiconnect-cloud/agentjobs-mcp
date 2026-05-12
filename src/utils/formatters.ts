@@ -51,6 +51,39 @@ const jobConfigSchema = z.object({
   start_prompt: z.string().optional(),
 }).passthrough();
 
+const activitySourceSchema = z.object({
+  type: z.enum(['dispatch', 'process_module', 'direct']),
+  reference_id: z.string().optional(),
+  execution_id: z.string().optional(),
+  job_id: z.string().optional(),
+  chat_id: z.string().optional(),
+  agent_job_type_id: z.string().optional(),
+  channel_code: z.string().optional(),
+}).passthrough();
+
+// Required-by-contract (per `job-activities-query` spec): every activity entry
+// rendered by the formatter MUST surface id, created_at, status, activity_type_code,
+// source.type, consumed_credits, allocated_credits. Records missing any of these
+// fail the parse and fall back to "[unparseable activity]" so upstream audit-data
+// corruption is surfaced rather than silently rendered as `unknown`/`n/a`.
+const activitySchema = z.object({
+  id: z.string().min(1),
+  org_id: z.string().optional(),
+  activity_type_code: z.string().min(1),
+  status: z.enum(['submitted', 'completed', 'canceled']),
+  allocated_credits: z.number(),
+  consumed_credits: z.number(),
+  credits_rule_id: z.number().optional(),
+  payloads: z.object({
+    input: z.any().optional(),
+    output: z.any().optional(),
+  }).passthrough().optional(),
+  processed_at: isoOrMs.nullable().optional(),
+  created_at: z.union([z.string(), z.number()]),
+  updated_at: isoOrMs,
+  source: activitySourceSchema,
+}).passthrough();
+
 const jobDetailsSchema = z.object({
   job_id: z.string(),
   job_type_id: z.string(),
@@ -70,6 +103,13 @@ const jobDetailsSchema = z.object({
   channel_data: channelDataSchema.optional().default({}),
   job_config: jobConfigSchema.optional().default({}),
   params: z.record(z.any()).optional().default({}),
+  activities_count: z.number().optional(),
+  // Activities are intentionally validated as `unknown[]` here (not as
+  // `z.array(activitySchema)`): per-entry parsing happens inside
+  // `formatActivityEntry`, so a single malformed record degrades to
+  // "[unparseable activity]" without making the whole job document fall back
+  // to the raw-JSON branch in formatJobDetails.
+  Activities: z.array(z.unknown()).optional(),
 }).passthrough();
 
 const bool = (v: any) => (v === true ? 'yes' : v === false ? 'no' : 'n/a');
@@ -81,7 +121,148 @@ const truncate = (s: any, max = 300) => {
 };
 const fmtList = (arr?: string[] | null) => (arr && arr.length ? arr.join(', ') : 'n/a');
 
-export function formatJobDetails(job: unknown): string {
+const ACTIVITY_OUTPUT_MAX = 200;
+
+function isBinaryValue(value: unknown): boolean {
+  if (value === null || value === undefined || typeof value !== 'object') return false;
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(value)) return true;
+  if (value instanceof ArrayBuffer) return true;
+  if (typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(value as any)) return true;
+  return false;
+}
+
+function containsBinary(value: unknown, seen: WeakSet<object> = new WeakSet()): boolean {
+  if (isBinaryValue(value)) return true;
+  if (value === null || typeof value !== 'object') return false;
+  if (seen.has(value as object)) return false;
+  seen.add(value as object);
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      if (containsBinary(v, seen)) return true;
+    }
+    return false;
+  }
+  for (const v of Object.values(value as Record<string, unknown>)) {
+    if (containsBinary(v, seen)) return true;
+  }
+  return false;
+}
+
+function safeStringifyOutput(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (containsBinary(value)) return '[non-serializable]';
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined ? '[non-serializable]' : text;
+  } catch {
+    return '[non-serializable]';
+  }
+}
+
+/**
+ * Collapses newlines/CR/tabs into escaped literals and clamps the result so it
+ * always fits in a single visual line of the activity output. Used by every
+ * code path that injects user-controlled activity content into the rendered
+ * line — both the normal `payloads.output` branch and the malformed-entry
+ * fallback — so a bad record cannot visually corrupt the surrounding entries.
+ */
+function sanitizeForActivityLine(value: string, max: number = ACTIVITY_OUTPUT_MAX): string {
+  const escaped = value
+    .replace(/\r\n/g, '\\n')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\n')
+    .replace(/\t/g, '\\t');
+  return escaped.length > max ? `${escaped.slice(0, max)}…` : escaped;
+}
+
+function formatActivitySource(source: any): string {
+  if (!source || typeof source !== 'object') return 'unknown';
+  const type = source.type ?? 'unknown';
+  const extras: string[] = [];
+  if (source.reference_id) extras.push(`ref: ${source.reference_id}`);
+  if (source.execution_id) extras.push(`exec: ${source.execution_id}`);
+  if (source.chat_id) extras.push(`chat: ${source.chat_id}`);
+  if (source.agent_job_type_id) extras.push(`type: ${source.agent_job_type_id}`);
+  if (source.channel_code) extras.push(`channel: ${source.channel_code}`);
+  return extras.length ? `${type} (${extras.join(', ')})` : String(type);
+}
+
+export function formatActivityEntry(activity: unknown): string {
+  let a: z.infer<typeof activitySchema>;
+  try {
+    a = activitySchema.parse(activity);
+  } catch {
+    const raw = safeStringifyOutput(activity);
+    return `- [unparseable activity] ${sanitizeForActivityLine(raw)}`;
+  }
+
+  const createdIso = toIso(a.created_at) ?? 'n/a';
+  const status = a.status ?? 'unknown';
+  const typeCode = a.activity_type_code ?? 'unknown';
+  const sourceLine = formatActivitySource(a.source);
+  const consumed = a.consumed_credits ?? 0;
+  const allocated = a.allocated_credits ?? 0;
+
+  const lines = [
+    `- ${createdIso} [${status}] ${typeCode} via ${sourceLine}`,
+    `  credits: ${consumed}/${allocated}  id: ${a.id}`,
+  ];
+
+  const output = a.payloads?.output;
+  if (output !== undefined && output !== null && output !== '') {
+    const stringified = safeStringifyOutput(output);
+    if (stringified !== '') {
+      lines.push(`  output: ${sanitizeForActivityLine(stringified)}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export interface ActivitiesMeta {
+  count?: number;
+  limit?: number;
+  total?: number;
+}
+
+export interface JobActivitiesListMeta extends ActivitiesMeta {
+  count: number;
+  limit: number;
+  total: number;
+}
+
+export function formatJobActivitiesList(
+  jobId: string,
+  activities: unknown[],
+  meta: JobActivitiesListMeta,
+  offset: number = 0
+): string {
+  if (!meta || typeof meta.count !== 'number' || typeof meta.limit !== 'number' || typeof meta.total !== 'number') {
+    throw new Error(
+      'formatJobActivitiesList: meta is required with numeric `count`, `limit`, and `total`. ' +
+      `Received: ${JSON.stringify(meta)}`
+    );
+  }
+
+  const safeActivities = activities || [];
+  const { count, total } = meta;
+  const hasMore = (offset + count) < total;
+  // Advance by the number of rows actually returned, not by `limit`. If the
+  // backend ships a short non-terminal page (count < limit), advancing by
+  // `limit` would tell the caller to skip unseen rows.
+  const nextOffset = hasMore ? offset + count : null;
+  const footer = `Returned: ${count} | Total matching: ${total} | Has more: ${hasMore} | Next offset: ${nextOffset === null ? 'null' : nextOffset}`;
+
+  if (safeActivities.length === 0) {
+    return `No activities found for job ${jobId}.\n\n${footer}`;
+  }
+
+  const entries = safeActivities.map(formatActivityEntry).join('\n');
+  return `Activities for job ${jobId} (showing ${count}):\n\n${entries}\n\n${footer}`;
+}
+
+export function formatJobDetails(job: unknown, meta?: { activities_meta?: ActivitiesMeta }): string {
   try {
     const j = jobDetailsSchema.parse(job);
 
@@ -132,6 +313,27 @@ export function formatJobDetails(job: unknown): string {
     })();
 
     const startPrompt = j.job_config?.start_prompt ? truncate(j.job_config.start_prompt, 500) : undefined;
+
+    // Fail-closed: the only signal that the caller actually requested the
+    // overlay is `meta.activities_meta` (a field the backend returns ONLY for
+    // ?include=activities). Without that signal we omit the Activities block
+    // entirely — even if `j.Activities` happens to be populated in the payload —
+    // to keep flag-off output byte-identical to the legacy formatter.
+    let activitiesBlock = '';
+    const overlayRequested = meta?.activities_meta !== undefined;
+    if (overlayRequested) {
+      if (Array.isArray(j.Activities) && j.Activities.length > 0) {
+        const entries = j.Activities.map(formatActivityEntry).join('\n');
+        const total = meta?.activities_meta?.count;
+        const limit = meta?.activities_meta?.limit;
+        const truncationLine = (typeof total === 'number' && typeof limit === 'number' && total > limit)
+          ? `\n(showing ${j.Activities.length} of ${total} activities — use get_job_activities for full pagination)`
+          : '';
+        activitiesBlock = `\n\nActivities:\n${entries}${truncationLine}`;
+      } else {
+        activitiesBlock = `\n\nActivities:\n  - (no activities recorded for this job)`;
+      }
+    }
 
     return (
 `Job Details
@@ -186,7 +388,7 @@ Result / Tags / Log:
 - Result: ${safe(j.result)}
 - Tags: ${fmtList(tagsList)}
 - Execution Log (last 5):
-${lastLogs.length ? lastLogs.join('\n') : '  - n/a'}
+${lastLogs.length ? lastLogs.join('\n') : '  - n/a'}${activitiesBlock}
 `
     ).trim();
   } catch (e) {
@@ -205,16 +407,43 @@ const jobSchema = z.object({
   job_status: z.string(),
   result: z.string().nullable(),
   job_type_id: z.string(),
+  activities_count: z.number().optional(),
+  Activities: z.array(z.any()).optional(),
 }).passthrough(); // .passthrough() permite outros campos não definidos no schema.
+
+export interface FormatJobSummaryOptions {
+  /**
+   * Whether the caller invoked the parent tool with `include_activities=true`.
+   * Mirrors the same fail-closed contract used by `formatJobList` /
+   * `formatJobDetails`: a backend that leaks the `Activities` overlay array
+   * without the caller asking must NOT alter the rendered summary. The
+   * `activities_count` field is always-on (server-maintained) and is shown
+   * regardless of this flag — only the overlay array is gated.
+   */
+  includeActivities?: boolean;
+}
 
 /**
  * Formata um resumo de um job, com os campos principais.
- * @param job - O objeto do job.
- * @returns Uma string formatada com o resumo do job.
  */
-export function formatJobSummary(job: unknown): string {
+export function formatJobSummary(job: unknown, options: FormatJobSummaryOptions = {}): string {
   try {
     const parsedJob = jobSchema.parse(job);
+    const overlayConsidered = options.includeActivities === true && Array.isArray(parsedJob.Activities);
+    const overlayLen = overlayConsidered ? (parsedJob.Activities as unknown[]).length : undefined;
+    const totalCount = typeof parsedJob.activities_count === 'number' ? parsedJob.activities_count : undefined;
+    let activitiesLine = '';
+    if (totalCount !== undefined && overlayLen !== undefined && overlayLen !== totalCount) {
+      // Surface any divergence between the canonical total and the overlay size,
+      // not just the truncation direction (overlay < total). A backend bug that
+      // returns more overlay entries than the canonical count is also a real
+      // mismatch the caller should see.
+      activitiesLine = `\n- Activities: ${totalCount} (overlay: ${overlayLen})`;
+    } else if (totalCount !== undefined) {
+      activitiesLine = `\n- Activities: ${totalCount}`;
+    } else if (overlayLen !== undefined) {
+      activitiesLine = `\n- Activities: ${overlayLen}`;
+    }
     return `
 - Job ID: ${parsedJob.job_id}
 - Status: ${parsedJob.job_status}
@@ -222,7 +451,7 @@ export function formatJobSummary(job: unknown): string {
 - Channel: ${parsedJob.channel_code}
 - Scheduled At: ${parsedJob.scheduled_at}
 - Updated At: ${parsedJob.updated_at}
-- Result: ${parsedJob.result || 'N/A'}
+- Result: ${parsedJob.result || 'N/A'}${activitiesLine}
     `.trim();
   } catch {
     // Se a validação falhar, retorna o objeto como string.
@@ -234,6 +463,9 @@ export interface JobListMeta {
   count: number;
   limit: number;
   total: number;
+  activities_total_returned?: number;
+  activities_total_available?: number;
+  activities_truncated?: boolean;
 }
 
 /**
@@ -250,7 +482,23 @@ export interface JobListMeta {
  * @param offset - O `offset` que a tool enviou na requisição (default 0).
  * @returns Uma string formatada com a lista de resumos de jobs.
  */
-export function formatJobList(jobs: unknown[], meta: JobListMeta, offset: number = 0): string {
+export interface FormatJobListOptions {
+  /**
+   * Whether the caller invoked `list_jobs` with `include_activities=true`. The
+   * formatter uses this to decide whether to surface activities-related footer
+   * lines (currently the global truncation indicator). Without this signal a
+   * backend that mistakenly leaks `meta.activities_truncated` would corrupt the
+   * footer for callers who never asked for activities.
+   */
+  includeActivities?: boolean;
+}
+
+export function formatJobList(
+    jobs: unknown[],
+    meta: JobListMeta,
+    offset: number = 0,
+    options: FormatJobListOptions = {}
+): string {
     if (!meta || typeof meta.count !== 'number' || typeof meta.limit !== 'number' || typeof meta.total !== 'number') {
         throw new Error(
             'formatJobList: meta is required with numeric `count`, `limit`, and `total`. ' +
@@ -263,13 +511,19 @@ export function formatJobList(jobs: unknown[], meta: JobListMeta, offset: number
     const hasMore = (offset + count) < total;
     const nextOffset = hasMore ? offset + limit : null;
 
-    const footer = `Returned: ${count} | Total matching: ${total} | Has more: ${hasMore} | Next offset: ${nextOffset === null ? 'null' : nextOffset}`;
+    let footer = `Returned: ${count} | Total matching: ${total} | Has more: ${hasMore} | Next offset: ${nextOffset === null ? 'null' : nextOffset}`;
+    if (options.includeActivities === true && meta.activities_truncated === true) {
+        const returned = typeof meta.activities_total_returned === 'number' ? meta.activities_total_returned : '?';
+        const available = typeof meta.activities_total_available === 'number' ? meta.activities_total_available : '?';
+        footer += `\nActivities truncated: yes (returned ${returned} of ${available} available)`;
+    }
 
     if (safeJobs.length === 0) {
         return `Found 0 jobs.\n\n${footer}`;
     }
 
-    const jobSummaries = safeJobs.map(job => formatJobSummary(job)).join('\n\n');
+    const summaryOpts: FormatJobSummaryOptions = { includeActivities: options.includeActivities === true };
+    const jobSummaries = safeJobs.map(job => formatJobSummary(job, summaryOpts)).join('\n\n');
     return `Found ${safeJobs.length} jobs.\n\n${jobSummaries}\n\n${footer}`;
 }
 

@@ -375,3 +375,118 @@ curl -X DELETE https://api.example.com/services/agent-jobs/job123 \
     "reason": "No longer needed"
   }'
 ```
+
+## Activities
+
+Cada agent job acumula uma trilha de auditoria de **activities** (registros de operações como `ai_completion`, chamadas de ferramentas e logs internos). A trilha pode ser consultada por dois caminhos: o endpoint dedicado `/services/activities` (paginação real, recomendado para investigação) ou o overlay `?include=activities` em `/services/agent-jobs/:id` e `/services/agent-jobs` (conveniência, com caps server-side).
+
+### `ActivityRecord` schema
+
+```ts
+{
+  id: string;                  // UUID v4
+  org_id: string;
+  activity_type_code: string;  // código aberto (ex.: "ai_completion")
+  status: 'submitted' | 'completed' | 'canceled';
+  allocated_credits: number;
+  consumed_credits: number;
+  credits_rule_id: number;     // 0..3
+  payloads?: { input?: any; output?: any };
+  processed_at?: string;       // ISO 8601, opcional
+  created_at: string;
+  updated_at: string;
+  source: {
+    type: 'dispatch' | 'process_module' | 'direct';
+    reference_id?: string;
+    execution_id?: string;
+    job_id?: string;
+    chat_id?: string;
+    agent_job_type_id?: string;
+    channel_code?: string;
+  };
+}
+```
+
+O contador `activities_count` é mantido server-side no próprio documento do agent job (incrementado a cada activity criada com `source.job_id`). Está disponível em qualquer resposta de job, sem necessidade de `?include=activities`.
+
+### Endpoint dedicado: `GET /services/activities`
+
+Recomendado para consulta paginada da trilha de um job específico. Sem caps de truncamento; suporta filtros server-side adicionais.
+
+**Query params:**
+- `job_id` (string, recomendado) — filtra activities do job indicado.
+- `org_id` (string, opcional) — escopo de organização.
+- `status` (`submitted | completed | canceled`, opcional)
+- `activity_type_code` (string, opcional) — código aberto.
+- `source_type` (`dispatch | process_module | direct`, opcional) — filtra pelo `source.type`.
+- `limit` (int, default 50)
+- `offset` (int, default 0)
+- `sort` (string, default `-created_at`)
+
+**Resposta:**
+```json
+{
+  "data": [ "ActivityRecord", "..." ],
+  "meta": { "count": 50, "limit": 50, "total": 1234, "offset": 0 }
+}
+```
+
+**Exemplo:**
+```bash
+curl -X GET "https://api.example.com/services/activities?job_id=job_abc&status=completed&limit=100" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Overlay: `?include=activities` em `/services/agent-jobs/:id`
+
+Anexa as activities mais recentes ao detalhe do job. Útil para combinar contexto do job com trilha em uma única round-trip.
+
+**Query params adicionais:**
+- `include=activities` (obrigatório para ativar)
+- `include_limit` (int 1–100, default 50) — máximo de activities anexadas.
+- `include_sort` (`created_at | -created_at`, default `-created_at`)
+
+**Resposta:**
+```json
+{
+  "data": {
+    "job_id": "...",
+    "status": "completed",
+    "activities_count": 1234,
+    "Activities": [ "ActivityRecord", "..." ]
+  },
+  "meta": {
+    "activities_meta": { "count": 1234, "limit": 50 }
+  }
+}
+```
+
+`Activities` vem em **PascalCase** por convenção do serializador da API. Quando `meta.activities_meta.count > meta.activities_meta.limit`, a lista foi truncada — use o endpoint dedicado para acessar o restante.
+
+### Overlay: `?include=activities` em `/services/agent-jobs` (lista)
+
+Anexa activities a cada job da listagem.
+
+**Query params adicionais:**
+- `include=activities` (obrigatório)
+- `activities_limit_per_job` (int 1–100, default 15)
+- `activities_total_limit` (int 1–3000, default 500) — cap global agregado.
+- `activities_sort` (`created_at | -created_at`, default `-created_at`)
+
+**Resposta:**
+```json
+{
+  "data": [ { "Activities": [] } ],
+  "meta": {
+    "activities_total_returned": 45,
+    "activities_total_available": 120,
+    "activities_truncated": true
+  }
+}
+```
+
+### Comportamento sensível
+
+- **Fail-closed**: se a busca de activities falhar internamente quando `include=activities` está ativo, a request **inteira** falha (status 4xx/5xx). Garante integridade da trilha — nunca retorna o job sem as activities solicitadas. Em caso de erro, refaça a request sem `include=activities` ou use o endpoint dedicado.
+- **Cache bypass**: requests com `?include=activities` em `/services/agent-jobs` ignoram o cache server-side, garantindo dados sempre frescos para uso operacional/auditoria.
+- **Activities count sempre disponível**: `activities_count` no objeto do job é mantido independentemente de `include=activities`, então é consultável diretamente em qualquer resposta de job.

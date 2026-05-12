@@ -24,3 +24,17 @@ export const flexibleDateTimeSchema = () =>
   }, {
     message: "Invalid date-time string. Please use a valid ISO 8601 format.",
   });
+
+/**
+ * Enum factories for activity record fields. Returned as factories for the
+ * same reason as `flexibleDateTimeSchema` — singletons would cause `$ref`
+ * collisions in the serialized JSON Schema across sibling tool fields.
+ */
+export const activityStatusSchema = () =>
+  z.enum(['submitted', 'completed', 'canceled']);
+
+export const activitySourceTypeSchema = () =>
+  z.enum(['dispatch', 'process_module', 'direct']);
+
+export const activitiesSortSchema = () =>
+  z.enum(['created_at', '-created_at']);
